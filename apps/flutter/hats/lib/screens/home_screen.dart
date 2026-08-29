@@ -21,12 +21,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  String get _currentAgentName {
-    final agents = context.read<AppState>().agents;
-    if (agents.isEmpty) return '';
-    return agents[_currentAgentIndex.clamp(0, agents.length - 1)].name;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Consumer<AppState>(
@@ -38,13 +32,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
         // Messages for the currently visible agent
         final agentMessages = state.messages
-            .where((m) => m.agentName == null || m.agentName == agentName)
+            .where((m) => m.agentName == agentName)
             .toList();
 
         return Scaffold(
           drawer: _buildDrawer(ctx, state),
           body: agents.isEmpty
-              ? _buildNoAgents(ctx)
+              ? _buildNoAgents()
               : _buildMain(ctx, state, agents, agentName, agentMessages),
         );
       },
@@ -70,9 +64,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // Agent avatar area — 70% of remaining space
+        // Agent avatar area — 60% of remaining space
         Expanded(
-          flex: 7,
+          flex: 6,
           child: PageView.builder(
             controller: _pageCtrl,
             itemCount: agents.length,
@@ -80,13 +74,14 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (ctx, i) => AgentCard(
               agent: agents[i],
               serverUrl: state.serverUrl ?? '',
+              avatarConfig: state.avatarConfigFor(agents[i].avatar),
             ),
           ),
         ),
 
-        // Chat panel — 30% of remaining space
+        // Chat panel — 40% of remaining space
         Expanded(
-          flex: 3,
+          flex: 4,
           child: ChatPanel(
             messages: messages.cast(),
             agentName: agentName,
@@ -100,13 +95,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildNoAgents(BuildContext ctx) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('HATS')),
-      body: const Center(
-        child: Text('No agents in this project yet.\nSet them up in the web app.',
-            textAlign: TextAlign.center),
-      ),
+  Widget _buildNoAgents() {
+    return Column(
+      children: [
+        SafeArea(
+          bottom: false,
+          child: _TopBar(agentIndex: 0, agentCount: 0, username: ''),
+        ),
+        const Expanded(
+          child: Center(
+            child: Text(
+              'No agents in this project yet.\nUse the web app to add some.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

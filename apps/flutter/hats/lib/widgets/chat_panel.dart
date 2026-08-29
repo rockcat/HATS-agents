@@ -32,7 +32,11 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Future<void> _initSpeech() async {
-    _speechAvailable = await _speech.initialize();
+    try {
+      _speechAvailable = await _speech.initialize();
+    } catch (_) {
+      _speechAvailable = false;
+    }
     if (mounted) setState(() {});
   }
 

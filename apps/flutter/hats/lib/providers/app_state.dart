@@ -3,8 +3,11 @@ import 'package:flutter/foundation.dart';
 import '../models/agent.dart';
 import '../models/chat_message.dart';
 import '../models/ticket.dart';
+import '../models/avatar_config.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/speech_service.dart';
+import '../widgets/avatar_view.dart';
 
 class AppState extends ChangeNotifier {
   final AuthService _auth = AuthService();
@@ -17,9 +20,20 @@ class AppState extends ChangeNotifier {
   List<Agent> agents = [];
   List<ChatMessage> messages = [];
   List<Ticket> tickets = [];
+  Map<String, AvatarConfig> _avatarConfigs = {};
+  final Map<String, AvatarViewState> _avatarViews = {};
 
   ApiService? _api;
+  SpeechService? _speech;
   StreamSubscription<Map<String, dynamic>>? _sseSub;
+
+  void registerAvatarView(String agentName, AvatarViewState view) {
+    _avatarViews[agentName] = view;
+  }
+
+  void unregisterAvatarView(String agentName) {
+    _avatarViews.remove(agentName);
+  }
 
   ApiService get api {
     assert(_api != null, 'ApiService not initialised — call initFromStorage first');
@@ -36,8 +50,25 @@ class AppState extends ChangeNotifier {
     apiKey = creds.apiKey;
     username = creds.username;
     _api = ApiService(serverUrl: serverUrl!, apiKey: apiKey!);
+    _setupSpeech();
     projectId = await _auth.loadProjectId();
+    // Always kick off configs; also reload agents + SSE for saved project.
+    if (projectId != null) {
+      unawaited(_restoreProject(projectId!));
+    } else {
+      unawaited(_loadAvatarConfigs().then((_) => notifyListeners()));
+    }
     return true;
+  }
+
+  Future<void> _restoreProject(String id) async {
+    try {
+      final agentsFuture = _api!.switchProject(id);
+      await Future.wait([agentsFuture, _loadAvatarConfigs()]);
+      agents = await agentsFuture;
+    } catch (_) {}
+    notifyListeners();
+    _reconnectSse();
   }
 
   Future<void> setCredentials({
@@ -50,17 +81,61 @@ class AppState extends ChangeNotifier {
     username = user;
     await _auth.save(serverUrl: url, apiKey: key, username: user);
     _api = ApiService(serverUrl: url, apiKey: key);
+    _setupSpeech();
+    unawaited(_loadAvatarConfigs());
     notifyListeners();
+  }
+
+  /// Waits for the speaking agent's avatar to finish loading before playing
+  /// audio, so that lip sync visemes and audio start at the same time.
+  Future<void> _speakWhenReady(
+    String content, {
+    required String agentName,
+    Agent? agent,
+  }) async {
+    final avatarView = _avatarViews[agentName];
+    if (avatarView != null) {
+      await avatarView.vrmReady.timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {},
+      );
+    }
+    await _speech?.speak(
+      content,
+      agentName: agentName,
+      voice: agent?.voice,
+      speakerName: agent?.speakerName,
+    );
+  }
+
+  void _setupSpeech() {
+    _speech = SpeechService(_api!);
+    _speech!.onLipSync = (agentName, visemes) {
+      _avatarViews[agentName]?.applyLipSync(visemes);
+    };
+    unawaited(_speech!.init());
   }
 
   Future<void> setProject(String id) async {
     projectId = id;
     await _auth.saveProjectId(id);
-    final fetched = await _api!.switchProject(id);
-    agents = fetched;
+    // Load configs and agents in parallel; both needed before first render.
+    final agentsFuture = _api!.switchProject(id);
+    await Future.wait([agentsFuture, _loadAvatarConfigs()]);
+    agents = await agentsFuture;
     messages = [];
     notifyListeners();
     _reconnectSse();
+  }
+
+  AvatarConfig? avatarConfigFor(String? filename) =>
+      filename == null ? null : _avatarConfigs[filename];
+
+  Future<void> _loadAvatarConfigs() async {
+    try {
+      final list = await _api!.getAvatarConfigs();
+      _avatarConfigs = {for (final c in list) c.file: c};
+    } catch (_) {}
   }
 
   void _reconnectSse() {
@@ -99,6 +174,8 @@ class AppState extends ChangeNotifier {
               ...messages,
               ChatMessage(text: content, sender: MessageSender.agent, agentName: from),
             ];
+            final agent = agents.where((a) => a.name == from).firstOrNull;
+            unawaited(_speakWhenReady(content, agentName: from, agent: agent));
           }
         }
       case 'board_update':
@@ -118,10 +195,10 @@ class AppState extends ChangeNotifier {
   void addHumanMessage(String text, String agentName) {
     messages = [
       ...messages,
-      ChatMessage(text: text, sender: MessageSender.human),
+      ChatMessage(text: text, sender: MessageSender.human, agentName: agentName),
     ];
     notifyListeners();
-    _api!.sendMessage(agentName, text).catchError((_) {});
+    _api!.sendMessage(agentName, text).catchError((_) => '');
   }
 
   Future<void> refreshTickets() async {
@@ -134,6 +211,7 @@ class AppState extends ChangeNotifier {
   Future<void> logout() async {
     _sseSub?.cancel();
     _sseSub = null;
+    await _speech?.stop();
     await _api?.logout();
     await _auth.clear();
     serverUrl = null;
@@ -141,6 +219,7 @@ class AppState extends ChangeNotifier {
     username = null;
     projectId = null;
     _api = null;
+    _speech = null;
     agents = [];
     messages = [];
     tickets = [];
@@ -150,6 +229,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _sseSub?.cancel();
+    _speech?.dispose();
     super.dispose();
   }
 }

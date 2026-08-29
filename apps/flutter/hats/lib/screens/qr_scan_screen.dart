@@ -37,7 +37,10 @@ class _QrScanScreenState extends State<QrScanScreen> {
       if (apiKey == null || username == null) throw Exception('Invalid server response');
 
       final uri = Uri.parse(url);
-      final serverUrl = '${uri.scheme}://${uri.host}:${uri.port}';
+      var host = uri.host;
+      // On Android emulator, localhost/127.0.0.1 → 10.0.2.2 (host machine)
+      if (host == 'localhost' || host == '127.0.0.1') host = '10.0.2.2';
+      final serverUrl = '${uri.scheme}://$host:${uri.port}';
 
       if (!mounted) return;
       await context.read<AppState>().setCredentials(
