@@ -1,0 +1,135 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:poppy/models/embodied_agent.dart';
+import 'package:poppy/providers/poppy_state.dart';
+import 'package:poppy/services/embodiment_client.dart';
+import 'package:poppy/services/pairing_service.dart';
+
+/// Records what was sent, and can be made to fail like an unreachable runner.
+class _RecordingClient extends EmbodimentClient {
+  final List<String> sent = [];
+  bool reachable = true;
+
+  _RecordingClient() : super(baseUrl: 'http://test', apiKey: 'k', httpClient: http.Client());
+
+  @override
+  Future<void> send(String id, String content, {String thread = 'general'}) async {
+    if (!reachable) throw EmbodimentException('unreachable');
+    sent.add(content);
+  }
+
+  @override
+  Future<List<EmbodiedAgent>> agents() async => [];
+}
+
+/// Pairing that never touches the keychain.
+class _MemoryPairing extends PairingService {
+  Pairing? stored;
+  @override
+  Future<Pairing?> load() async => stored;
+  @override
+  Future<void> save(Pairing p) async => stored = p;
+  @override
+  Future<void> saveAgentId(String id) async {}
+  @override
+  Future<void> forget() async => stored = null;
+}
+
+void main() {
+  late _RecordingClient client;
+  late PoppyState state;
+
+  setUp(() async {
+    client = _RecordingClient();
+    state = PoppyState(pairing: _MemoryPairing(), clientFactory: (_) => client);
+    await state.completePairing(
+      const Pairing(serverUrl: 'http://test', apiKey: 'k', username: 'paul'),
+    );
+    await state.chooseAgent(const EmbodiedAgent(id: 'a1', name: 'Poppy'));
+  });
+
+  group('saying something while offline', () {
+    test('holds it rather than losing it', () async {
+      state.setConnectionForTest(Connection.offline);
+      await state.say('remind me to buy milk');
+
+      expect(client.sent, isEmpty);
+      expect(state.unsentCount, 1);
+    });
+
+    test('shows it in the transcript, marked as not yet delivered', () async {
+      state.setConnectionForTest(Connection.offline);
+      await state.say('remind me to buy milk');
+
+      // Silence would be the wrong failure: you said it, so you should see it.
+      expect(state.transcript.last.content, 'remind me to buy milk');
+      expect(state.transcript.last.pending, isTrue);
+    });
+
+    test('sends it on reconnect and marks it delivered', () async {
+      state.setConnectionForTest(Connection.offline);
+      await state.say('remind me to buy milk');
+
+      state.setConnectionForTest(Connection.online);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(client.sent, ['remind me to buy milk']);
+      expect(state.unsentCount, 0);
+      expect(state.transcript.last.pending, isFalse);
+    });
+
+    test('keeps the order it was said in', () async {
+      state.setConnectionForTest(Connection.offline);
+      await state.say('first');
+      await state.say('second');
+      await state.say('third');
+
+      state.setConnectionForTest(Connection.online);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(client.sent, ['first', 'second', 'third']);
+    });
+
+    test('stops at the first failure rather than sending out of order', () async {
+      state.setConnectionForTest(Connection.offline);
+      await state.say('first');
+      await state.say('second');
+
+      client.reachable = false;
+      state.setConnectionForTest(Connection.online);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(client.sent, isEmpty);
+      expect(state.unsentCount, 2);
+    });
+  });
+
+  group('saying something while online', () {
+    test('goes straight out and is not marked pending', () async {
+      state.setConnectionForTest(Connection.online);
+      await state.say('hello');
+
+      expect(client.sent, ['hello']);
+      expect(state.transcript.last.pending, isFalse);
+      expect(state.unsentCount, 0);
+    });
+
+    test('falls back to the outbox when the runner turns out to be gone', () async {
+      state.setConnectionForTest(Connection.online);
+      client.reachable = false;
+      await state.say('hello');
+
+      // Believing we were online is not the same as being online.
+      expect(state.unsentCount, 1);
+      expect(state.connection, Connection.offline);
+    });
+
+    test('ignores an empty message', () async {
+      state.setConnectionForTest(Connection.online);
+      await state.say('   ');
+
+      expect(client.sent, isEmpty);
+      expect(state.transcript, isEmpty);
+    });
+  });
+}

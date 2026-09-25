@@ -104,12 +104,46 @@ one code path for the two hardest parts: `webview_flutter` for the avatar and
 `speech_to_text` for voice, neither of which works on web. Testing happens on a
 device or emulator.
 
+## Where the runner lives, and what "local" can mean
+
+The runner should run on the user's own machine — a desktop, a home server, a
+NUC — with the phone connecting to it. That is local in the sense that matters:
+your data, your hardware, no third party in the middle.
+
+**It cannot run on the phone.** Every stdio MCP server is a child process the
+runner spawns (`StdioClientTransport` with a command and args), and the Speech
+Service spawns a Piper process per voice. iOS forbids spawning arbitrary
+processes outright; Android would need a bundled Node runtime and still could
+not `npx` a server. This is a hard block, not a difficulty.
+
+**A local LLM is already supported, at the runner.** `ollama` and `lmstudio`
+are first-class providers with base URLs (`OLLAMA_BASE_URL`,
+`LM_STUDIO_BASE_URL`). Point Poppy's template at Ollama on the same machine and
+nothing leaves the house. No new work — it is a template setting.
+
+**An on-device LLM is a different product.** A 2–4B model on a handset can hold
+a conversation, but it would have no MCP: no email, no kanban, no memory, no
+camera. Those tools are what makes Poppy useful rather than a chatbot, and
+small models call tools badly. Worth revisiting only if a narrow offline
+capability is wanted for its own sake.
+
+**So the real requirement is offline *tolerance*, not an offline runner.** Two
+of the three things the app does already work with no connection: speech-to-text
+is on-device, and the avatar renders locally once its model is cached. Only the
+reply needs the runner. That makes the honest design:
+
+- queue what the user said while disconnected, and send it on reconnect;
+- say plainly that Poppy cannot answer right now rather than failing silently;
+- cache the VRM model and the last transcript so the app opens to something.
+
+Phase 2 should build the connection state in from the start — retrofitting it
+into a happy-path conversation loop is much harder than allowing for it.
+
 ## Still to decide
 
-1. **Where does the Team Runner live?** The app needs to reach it from a phone,
-   not just the LAN. Home server plus a tunnel, a cloud VM, or something else?
-   This decides auth, TLS, and what happens with no connection. Needed before
-   phase 1 ships, not before it starts.
+1. **How the phone reaches the runner off-LAN.** Tailscale or similar is the
+   least work and keeps it private; a tunnel with TLS is the alternative. This
+   decides what the QR pairing URL contains.
 2. **Always-listening or push-to-talk?** "Listens for command" implies a wake
    word — a dependency, a battery cost, and a microphone that is always open.
    Recommendation: push-to-talk first, wake word as a later option.
@@ -140,8 +174,12 @@ the way the runner says.
   whole utterance or the latency the pipeline was built for is thrown away.
 - Text input as the fallback path.
 
-**Done when:** you can hold a spoken conversation with a talking face. This is
-the demo that proves the product.
+- Connection state throughout: queue while offline, replay on reconnect, and
+  say so rather than failing quietly.
+
+**Done when:** you can hold a spoken conversation with a talking face, and
+walking out of range degrades honestly instead of hanging. This is the demo
+that proves the product.
 
 ### 3 — The device-tool bridge
 - Embodiment API: `device_request` event, `device-results/{id}` endpoint,

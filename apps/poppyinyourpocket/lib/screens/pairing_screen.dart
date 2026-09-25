@@ -1,0 +1,124 @@
+/// First run: point this phone at a runner by scanning the dashboard's QR code.
+library;
+
+import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/poppy_state.dart';
+import '../services/pairing_service.dart';
+
+class PairingScreen extends StatefulWidget {
+  const PairingScreen({super.key});
+
+  @override
+  State<PairingScreen> createState() => _PairingScreenState();
+}
+
+class _PairingScreenState extends State<PairingScreen> {
+  final _pairing = PairingService();
+  final _manual = TextEditingController();
+  bool _scanning = false;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _manual.dispose();
+    super.dispose();
+  }
+
+  Future<void> _redeem(String url) async {
+    if (_busy) return;
+    setState(() { _busy = true; _error = null; });
+    try {
+      final paired = await _pairing.redeem(url);
+      if (!mounted) return;
+      await context.read<PoppyState>().completePairing(paired);
+    } on PairingException catch (err) {
+      if (mounted) setState(() { _error = err.message; _scanning = false; });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_scanning) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Scan the code'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => setState(() => _scanning = false),
+          ),
+        ),
+        body: MobileScanner(
+          onDetect: (capture) {
+            final value = capture.barcodes.firstOrNull?.rawValue;
+            if (value != null && !_busy) _redeem(value);
+          },
+        ),
+      );
+    }
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.face_retouching_natural, size: 72),
+                const SizedBox(height: 16),
+                Text('Poppy In Your Pocket',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 8),
+                Text(
+                  'Open the HATS dashboard, generate a pairing code, and scan it. '
+                  'Poppy runs on your own machine — this only tells the phone where to find her.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 28),
+                FilledButton.icon(
+                  onPressed: _busy ? null : () => setState(() => _scanning = true),
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Scan pairing code'),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: _manual,
+                  enabled: !_busy,
+                  decoration: const InputDecoration(
+                    labelText: 'or paste the pairing link',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onSubmitted: _redeem,
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _busy ? null : () => _redeem(_manual.text),
+                  child: _busy
+                      ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Pair'),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 16),
+                  Text(_error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
