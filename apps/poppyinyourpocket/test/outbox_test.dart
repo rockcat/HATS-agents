@@ -4,6 +4,7 @@ import 'package:poppy/models/embodied_agent.dart';
 import 'package:poppy/providers/poppy_state.dart';
 import 'package:poppy/services/embodiment_client.dart';
 import 'package:poppy/services/pairing_service.dart';
+import 'package:poppy/services/speaker.dart';
 
 /// Records what was sent, and can be made to fail like an unreachable runner.
 class _RecordingClient extends EmbodimentClient {
@@ -41,7 +42,11 @@ void main() {
 
   setUp(() async {
     client = _RecordingClient();
-    state = PoppyState(pairing: _MemoryPairing(), clientFactory: (_) => client);
+    state = PoppyState(
+          pairing: _MemoryPairing(),
+          clientFactory: (_) => client,
+          speakerFactory: (_, __) => const SilentSpeaker(),
+        );
     await state.completePairing(
       const Pairing(serverUrl: 'http://test', apiKey: 'k', username: 'paul'),
     );

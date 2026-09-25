@@ -169,10 +169,12 @@ the way the runner says.
 ### 2 — The conversation loop
 - Push-to-talk → `speech_to_text` → `POST /agents/{id}/messages`.
 - `agent_message` over SSE into a transcript.
-- `agent_speech` → play each sentence as it arrives, feed visemes to the
-  avatar. Per-sentence playback already works server-side; do not buffer the
-  whole utterance or the latency the pipeline was built for is thrown away.
-- Text input as the fallback path.
+- ~~Speech out.~~ **Done.** Two voices behind one interface: the platform
+  voice (instant, offline, mouth estimated from spelling) or Piper through
+  the runner (a round trip, real phoneme timings). Chosen from the app bar,
+  device by default. Neither needed a server change — speech over the
+  Embodiment API is asked for, not pushed. See docs/SERVICES.md.
+- Text input as the fallback path. **Done.**
 
 - Connection state throughout: queue while offline, replay on reconnect, and
   say so rather than failing quietly.

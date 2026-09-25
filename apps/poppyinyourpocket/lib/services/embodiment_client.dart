@@ -116,6 +116,33 @@ class EmbodimentClient {
     }
   }
 
+  /// Have the server speak, returning a chunk per sentence with real viseme
+  /// timings from Rhubarb.
+  ///
+  /// Only called when the client has chosen server-side speech. A client using
+  /// the platform voice never calls this, which is why no server change was
+  /// needed to support device TTS: speech here is asked for, not pushed.
+  Future<List<Map<String, dynamic>>> speech(String id, String text) async {
+    late http.Response res;
+    try {
+      res = await _http.post(
+        _uri('/agents/${Uri.encodeComponent(id)}/speech'),
+        headers: {..._headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'text': text, 'withVisemes': true}),
+      );
+    } on Object catch (err) {
+      throw EmbodimentException('Cannot reach Poppy: $err');
+    }
+    if (res.statusCode == 503) {
+      throw EmbodimentException('This runner has no voice configured.', 503);
+    }
+    if (res.statusCode >= 400) {
+      throw EmbodimentException(_errorFrom(res.body) ?? 'HTTP ${res.statusCode}', res.statusCode);
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (body['chunks'] as List<dynamic>? ?? []).whereType<Map<String, dynamic>>().toList();
+  }
+
   /// Where the avatar model lives. Handed straight to the renderer, which
   /// fetches it itself.
   String avatarUrl(String id) => '$baseUrl$_base/agents/${Uri.encodeComponent(id)}/avatar';

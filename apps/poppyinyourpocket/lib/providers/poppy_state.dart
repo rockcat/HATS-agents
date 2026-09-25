@@ -13,6 +13,7 @@ import '../models/embodied_agent.dart';
 import '../models/transcript_message.dart';
 import '../services/embodiment_client.dart';
 import '../services/pairing_service.dart';
+import '../services/speaker.dart';
 import '../services/sse_client.dart';
 
 enum Connection { offline, connecting, online }
@@ -25,10 +26,17 @@ class PoppyState extends ChangeNotifier {
   /// through a real socket.
   final EmbodimentClient Function(Pairing) _clientFor;
 
+  /// How to build a voice. A seam for tests, and the reason the platform TTS
+  /// plugin is not constructed until something actually intends to speak —
+  /// it reaches for a binding the moment it exists.
+  final Speaker Function(SpeechMode, PoppyState)? _speakerFor;
+
   PoppyState({
     PairingService? pairing,
     EmbodimentClient Function(Pairing)? clientFactory,
+    Speaker Function(SpeechMode, PoppyState)? speakerFactory,
   })  : _pairing = pairing ?? PairingService(),
+        _speakerFor = speakerFactory,
         _clientFor = clientFactory ??
             ((p) => EmbodimentClient(baseUrl: p.serverUrl, apiKey: p.apiKey));
 
@@ -115,6 +123,12 @@ class PoppyState extends ChangeNotifier {
   Future<void> chooseAgent(EmbodiedAgent a) async {
     agent = a;
     await _pairing.saveAgentId(a.id);
+    // The server speaker is bound to one agent, so it is rebuilt — but only
+    // if one was already in use. Choosing an agent is not asking to talk.
+    if (_speaker is! SilentSpeaker) {
+      await _speaker.dispose();
+      _speaker = _buildSpeaker();
+    }
     notifyListeners();
     await _loadTranscript();
     _connectStream();
@@ -150,16 +164,23 @@ class PoppyState extends ChangeNotifier {
     sse.connect();
   }
 
+  @visibleForTesting
+  void handleEventForTest(String event, Map<String, dynamic> data) =>
+      _onEvent(SseEvent(event, data));
+
   void _onEvent(SseEvent e) {
     switch (e.event) {
       case 'agent_message':
         if (e.data['agentId'] != agent?.id) return;
+        final role = e.data['role'] as String? ?? 'assistant';
+        final content = e.data['content'] as String? ?? '';
         transcript.add(TranscriptMessage(
-          role: e.data['role'] as String? ?? 'assistant',
-          content: e.data['content'] as String? ?? '',
+          role: role,
+          content: content,
           timestamp: DateTime.tryParse(e.data['timestamp'] as String? ?? '') ?? DateTime.now(),
         ));
         notifyListeners();
+        if (role == 'assistant') unawaited(_speakReply(content));
 
       case 'agent_state':
         if (e.data['agentId'] != agent?.id) return;
@@ -174,13 +195,59 @@ class PoppyState extends ChangeNotifier {
         notifyListeners();
 
       case 'agent_speech':
-        // Audio and visemes are handled by the speaker, wired up in phase 2.
-        onSpeech?.call(e.data);
+        // Another client asked the runner to speak. Nothing to do here —
+        // this app drives its own voice through the Speaker.
+        break;
     }
   }
 
-  /// Set by the screen that owns the avatar and the audio player.
-  void Function(Map<String, dynamic>)? onSpeech;
+  // ── Speaking ───────────────────────────────────────────────────────────────
+
+  /// Where Poppy's voice comes from. The device by default: it needs no
+  /// connection, costs the server nothing, and starts talking immediately.
+  /// The trade is lip sync — see `speaker.dart`.
+  SpeechMode speechMode = SpeechMode.device;
+  Speaker _speaker = const SilentSpeaker();
+
+  /// Mouth shapes, handed to whatever is rendering the face.
+  void Function(List<Map<String, dynamic>>)? onLipSync;
+
+  /// Rebuild the speaker for the current mode. Safe to call repeatedly.
+  Future<void> setSpeechMode(SpeechMode mode) async {
+    speechMode = mode;
+    await _speaker.dispose();
+    _speaker = _buildSpeaker();
+    notifyListeners();
+  }
+
+  Speaker _buildSpeaker() {
+    final custom = _speakerFor;
+    if (custom != null) return custom(speechMode, this);
+
+    void lip(List<Map<String, dynamic>> v) => onLipSync?.call(v);
+    return switch (speechMode) {
+      SpeechMode.device => DeviceSpeaker(onLipSync: lip),
+      SpeechMode.server when _client != null && agent != null =>
+        ServerSpeaker(client: _client!, agentId: agent!.id, onLipSync: lip),
+      _ => const SilentSpeaker(),
+    };
+  }
+
+  /// Say a reply out loud, if Poppy is meant to have a voice at all.
+  ///
+  /// Failure here is never allowed to break the conversation: a silent reply
+  /// you can still read beats an error over a voice.
+  Future<void> _speakReply(String text) async {
+    if (speechMode == SpeechMode.off) return;
+    try {
+      await _speaker.speak(text);
+    } catch (_) {
+      // Voices are an enhancement. The text is already on screen.
+    }
+  }
+
+  /// Cut Poppy off — talking over you is worse than silence.
+  Future<void> hush() => _speaker.stop();
 
   @visibleForTesting
   void setConnectionForTest(Connection c) {
@@ -259,6 +326,7 @@ class PoppyState extends ChangeNotifier {
   @override
   void dispose() {
     _disconnect();
+    _speaker.dispose();
     _client?.close();
     super.dispose();
   }

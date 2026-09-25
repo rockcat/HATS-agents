@@ -9,6 +9,7 @@ import 'package:hats_avatar_view/hats_avatar_view.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/poppy_state.dart';
+import '../services/speaker.dart';
 import '../widgets/connection_banner.dart';
 import '../widgets/transcript_list.dart';
 
@@ -22,6 +23,15 @@ class PoppyScreen extends StatefulWidget {
 class _PoppyScreenState extends State<PoppyScreen> {
   final _input = TextEditingController();
   final _avatarKey = GlobalKey<AvatarViewState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // Whoever is speaking — device or server — drives the same face.
+    final state = context.read<PoppyState>();
+    state.onLipSync = (visemes) => _avatarKey.currentState?.applyLipSync(visemes);
+    state.setSpeechMode(state.speechMode);
+  }
 
   @override
   void dispose() {
@@ -53,6 +63,7 @@ class _PoppyScreenState extends State<PoppyScreen> {
       appBar: AppBar(
         title: Text(state.agent!.name),
         actions: [
+          _VoiceMenu(mode: state.speechMode),
           IconButton(
             tooltip: 'Forget this pairing',
             icon: const Icon(Icons.link_off),
@@ -106,6 +117,59 @@ class _PoppyScreenState extends State<PoppyScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Where Poppy's voice comes from.
+///
+/// Stated in the menu rather than buried in settings, because the trade is
+/// real and the user is the one who can judge it: the device voice starts
+/// instantly and works offline, the server voice is the one the operator
+/// chose and moves the mouth accurately.
+class _VoiceMenu extends StatelessWidget {
+  final SpeechMode mode;
+  const _VoiceMenu({required this.mode});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<SpeechMode>(
+    tooltip: 'Voice',
+      icon: Icon(switch (mode) {
+        SpeechMode.device => Icons.phone_android,
+        SpeechMode.server => Icons.cloud_queue,
+        SpeechMode.off => Icons.volume_off,
+      }),
+      onSelected: (m) => context.read<PoppyState>().setSpeechMode(m),
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: SpeechMode.device,
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.phone_android),
+            title: Text('This phone'),
+            subtitle: Text('Instant, works offline'),
+          ),
+        ),
+        PopupMenuItem(
+          value: SpeechMode.server,
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.cloud_queue),
+            title: Text('Her own voice'),
+            subtitle: Text('Accurate lip sync, needs a connection'),
+          ),
+        ),
+        PopupMenuItem(
+          value: SpeechMode.off,
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.volume_off),
+            title: Text('Silent'),
+            subtitle: Text('Read her replies'),
+          ),
+        ),
+      ],
     );
   }
 }

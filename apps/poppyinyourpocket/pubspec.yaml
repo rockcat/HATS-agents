@@ -20,6 +20,8 @@ dependencies:
   mobile_scanner: ^5.2.0
   # Speech-to-text runs on the device: Poppy hears you with no connection.
   speech_to_text: ^7.4.0
+  # The platform voice: instant, offline, no server round trip.
+  flutter_tts: ^4.2.0
   # Playback of the WAV the Speech Service returns, per sentence.
   audioplayers: ^6.1.0
   permission_handler: ^11.3.1
