@@ -84,6 +84,7 @@ class _PoppyScreenState extends State<PoppyScreen> {
                     key: _avatarKey,
                     src: url,
                     config: state.agent!.appearance,
+                    headers: state.avatarHeaders,
                   ),
           ),
           const Divider(height: 1),

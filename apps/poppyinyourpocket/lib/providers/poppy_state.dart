@@ -63,6 +63,11 @@ class PoppyState extends ChangeNotifier {
   String? get avatarUrl =>
       agent != null && agent!.hasAvatar ? _client?.avatarUrl(agent!.id) : null;
 
+  /// What the avatar WebView needs to fetch the model: the Embodiment API
+  /// authenticates `/api/*`, and a WebView carries no cookie.
+  Map<String, String> get avatarHeaders =>
+      pairing == null ? const {} : {'X-API-Key': pairing!.apiKey};
+
   // ── Startup ────────────────────────────────────────────────────────────────
 
   Future<void> restore() async {
