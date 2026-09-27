@@ -1,8 +1,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Talking to the runner. Declared here rather than only in the debug
+         manifest, or a release build would have no network at all. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Speech-to-text runs on the device: Poppy hears you with no connection. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
+    <!-- Scanning the pairing QR, and later the camera tools. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+
     <application
-        android:label="poppy"
+        android:label="Poppy"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:exported="true"

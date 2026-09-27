@@ -35,6 +35,15 @@ class PairingException implements Exception {
   String toString() => message;
 }
 
+/// The runner's base URL, taken from the pairing link it served.
+///
+/// `Uri.replace(query: '', fragment: '')` does *not* remove those parts — it
+/// marks them present and empty, giving `http://host:3001?#`. That looks right
+/// in a log and fails every request built on it, which is exactly how it got
+/// through: pairing used the scanned link verbatim and only the calls after it
+/// broke.
+String originOf(Uri uri) => uri.origin;
+
 class PairingService {
   static const _store = FlutterSecureStorage();
   static const _keyServer = 'poppy_server_url';
@@ -68,7 +77,7 @@ class PairingService {
 
     // The key is served by the runner itself, so its origin is the runner's.
     final pairing = Pairing(
-      serverUrl: uri.replace(path: '', query: '', fragment: '').toString().replaceAll(RegExp(r'/$'), ''),
+      serverUrl: originOf(uri),
       apiKey: apiKey,
       username: body['username'] as String? ?? 'you',
     );

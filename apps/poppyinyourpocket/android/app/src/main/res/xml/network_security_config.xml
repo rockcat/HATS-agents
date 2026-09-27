@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The runner speaks plain HTTP, and Android has refused cleartext by default
+  since 9 (API 28). Without this the app cannot reach it at all — pairing, the
+  roster, the event stream and the avatar model all fail the same way.
+
+  Poppy talks to a machine you own, usually on your own network, so cleartext
+  is the normal case rather than a lapse. If you put the runner behind a
+  TLS-terminating tunnel, delete this file and the manifest attribute with it.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
