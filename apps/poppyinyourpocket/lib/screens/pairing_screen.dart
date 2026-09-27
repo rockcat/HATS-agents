@@ -15,6 +15,42 @@ class PairingScreen extends StatefulWidget {
   State<PairingScreen> createState() => _PairingScreenState();
 }
 
+/// Shown when the camera cannot start — which on an emulator usually means
+/// no webcam was mapped to it, not that anything is wrong.
+class _CameraUnavailable extends StatelessWidget {
+  final String error;
+  final VoidCallback onBack;
+  const _CameraUnavailable({required this.error, required this.onBack});
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.no_photography, size: 48),
+              const SizedBox(height: 14),
+              const Text('No camera available.', textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              Text(
+                'On an emulator, start it with a webcam mapped:\n'
+                'emulator -avd <name> -camera-back webcam0\n\n'
+                'Or go back and paste the pairing link instead.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 18),
+              FilledButton(onPressed: onBack, child: const Text('Paste it instead')),
+              const SizedBox(height: 10),
+              Text(error, textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelSmall),
+            ],
+          ),
+        ),
+      );
+}
+
 class _PairingScreenState extends State<PairingScreen> {
   final _pairing = PairingService();
   final _manual = TextEditingController();
@@ -58,6 +94,12 @@ class _PairingScreenState extends State<PairingScreen> {
             final value = capture.barcodes.firstOrNull?.rawValue;
             if (value != null && !_busy) _redeem(value);
           },
+          // An emulator with no camera configured shows a black rectangle
+          // otherwise, which reads as "broken" rather than "not set up".
+          errorBuilder: (context, error, _) => _CameraUnavailable(
+            error: error.errorDetails?.message ?? error.errorCode.name,
+            onBack: () => setState(() => _scanning = false),
+          ),
         ),
       );
     }
@@ -94,8 +136,11 @@ class _PairingScreenState extends State<PairingScreen> {
                 TextField(
                   controller: _manual,
                   enabled: !_busy,
+                  autocorrect: false,
+                  keyboardType: TextInputType.url,
                   decoration: const InputDecoration(
                     labelText: 'or paste the pairing link',
+                    hintText: 'http://10.0.2.2:3001/api/auth/pair/…',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),

@@ -44,6 +44,16 @@ class PairingException implements Exception {
 /// broke.
 String originOf(Uri uri) => uri.origin;
 
+/// Make a stored base URL usable, whatever an older build put there.
+String repairServerUrl(String stored) {
+  try {
+    final uri = Uri.parse(stored);
+    return uri.hasScheme && uri.host.isNotEmpty ? originOf(uri) : stored;
+  } catch (_) {
+    return stored;
+  }
+}
+
 class PairingService {
   static const _store = FlutterSecureStorage();
   static const _keyServer = 'poppy_server_url';
@@ -99,7 +109,10 @@ class PairingService {
     final apiKey = await _store.read(key: _keyApiKey);
     if (serverUrl == null || apiKey == null) return null;
     return Pairing(
-      serverUrl: serverUrl,
+      // An older build stored `http://host:3001?#`, which resolves to `/`
+      // and quietly returns the dashboard. Repaired on read so a device
+      // paired before the fix heals itself rather than needing a reinstall.
+      serverUrl: repairServerUrl(serverUrl),
       apiKey: apiKey,
       username: await _store.read(key: _keyUsername) ?? 'you',
       agentId: await _store.read(key: _keyAgent),

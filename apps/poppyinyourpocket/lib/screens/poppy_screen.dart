@@ -52,7 +52,12 @@ class _PoppyScreenState extends State<PoppyScreen> {
 
     if (!state.hasAgent) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Poppy')),
+        appBar: AppBar(
+          title: const Text('Poppy'),
+          // Reachable here on purpose: if the stored address is wrong, this
+          // is the only screen you ever see, and re-pairing is the fix.
+          actions: [_ForgetButton(serverUrl: state.pairing?.serverUrl)],
+        ),
         body: _NoAgent(state: state),
       );
     }
@@ -64,11 +69,7 @@ class _PoppyScreenState extends State<PoppyScreen> {
         title: Text(state.agent!.name),
         actions: [
           _VoiceMenu(mode: state.speechMode),
-          IconButton(
-            tooltip: 'Forget this pairing',
-            icon: const Icon(Icons.link_off),
-            onPressed: () => context.read<PoppyState>().forget(),
-          ),
+          _ForgetButton(serverUrl: state.pairing?.serverUrl),
         ],
       ),
       body: Column(
@@ -120,6 +121,23 @@ class _PoppyScreenState extends State<PoppyScreen> {
       ),
     );
   }
+}
+
+/// Unpair, and say which runner is being unpaired from.
+///
+/// The address is in the tooltip because a wrong one is invisible otherwise —
+/// the difference between a working pairing and a dead one is a few
+/// characters you never see.
+class _ForgetButton extends StatelessWidget {
+  final String? serverUrl;
+  const _ForgetButton({this.serverUrl});
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: serverUrl == null ? 'Forget this pairing' : 'Paired with $serverUrl — tap to forget',
+        icon: const Icon(Icons.link_off),
+        onPressed: () => context.read<PoppyState>().forget(),
+      );
 }
 
 /// Where Poppy's voice comes from.
@@ -191,9 +209,16 @@ class _NoAgent extends StatelessWidget {
               Text(
                 state.connection == Connection.online
                     ? 'The runner has no agents deployed. Add one in the Project Designer.'
-                    : 'Cannot reach the runner. Poppy runs on your own machine — is it on?',
+                    : 'Cannot reach the runner at\n${state.pairing?.serverUrl ?? 'nowhere'}',
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 8),
+              if (state.connection != Connection.online)
+                Text(
+                  'Poppy runs on your own machine. Check it is running and that the address above is right — unpair to scan a new code.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () => context.read<PoppyState>().refreshAgents(),
