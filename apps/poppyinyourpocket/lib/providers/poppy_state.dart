@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/embodied_agent.dart';
 import '../models/transcript_message.dart';
+import '../services/device_tools.dart';
 import '../services/embodiment_client.dart';
 import '../services/pairing_service.dart';
 import '../services/speaker.dart';
@@ -51,6 +52,10 @@ class PoppyState extends ChangeNotifier {
   List<TranscriptMessage> transcript = [];
   Connection connection = Connection.offline;
 
+  /// What this phone can do for Poppy that the runner cannot.
+  DeviceToolHost? deviceTools;
+  String? _deviceId;
+
   /// Said while disconnected, waiting to be sent. Not a queue of requests —
   /// a queue of things you told Poppy that she has not heard yet.
   final List<String> _outbox = [];
@@ -74,6 +79,7 @@ class PoppyState extends ChangeNotifier {
     pairing = await _pairing.load();
     if (pairing == null) { notifyListeners(); return; }
     _client = _clientFor(pairing!);
+    await _buildDeviceHost();
     notifyListeners();
     await refreshAgents();
   }
@@ -81,8 +87,25 @@ class PoppyState extends ChangeNotifier {
   Future<void> completePairing(Pairing p) async {
     pairing = p;
     _client = _clientFor(p);
+    await _buildDeviceHost();
     notifyListeners();
     await refreshAgents();
+  }
+
+  /// Tell the runner what this phone can do. Failure is not fatal: the
+  /// conversation works with no device tools at all.
+  Future<void> _announceDevice() async { await deviceTools?.declare(); }
+
+  /// Offer this phone to the runner as somewhere tools can run.
+  Future<void> _buildDeviceHost() async {
+    if (_client == null) return;
+    _deviceId ??= await _pairing.deviceId();
+    deviceTools = DeviceToolHost(
+      client: _client!,
+      deviceId: _deviceId!,
+      label: pairing?.username ?? 'phone',
+      tools: defaultDeviceTools(),
+    );
   }
 
   Future<void> forget() async {
@@ -155,7 +178,7 @@ class PoppyState extends ChangeNotifier {
     _disconnect();
     if (_client == null || agent == null) return;
 
-    final sse = _client!.events(agentId: agent!.id);
+    final sse = _client!.events(agentId: agent!.id, deviceId: _deviceId);
     _sse = sse;
     _stateSub = sse.state.listen((s) {
       _setConnection(switch (s) {
@@ -163,7 +186,13 @@ class PoppyState extends ChangeNotifier {
         SseState.connecting => Connection.connecting,
         SseState.closed => Connection.offline,
       });
-      if (s == SseState.open) unawaited(_flushOutbox());
+      if (s == SseState.open) {
+        unawaited(_flushOutbox());
+        // Declared after the stream is up, not before: the runner drops a
+        // device when its stream closes, so declaring first would announce
+        // tools and immediately withdraw them on a reconnect.
+        unawaited(_announceDevice());
+      }
     });
     _eventSub = sse.events.listen(_onEvent);
     sse.connect();
@@ -203,6 +232,10 @@ class PoppyState extends ChangeNotifier {
         // Another client asked the runner to speak. Nothing to do here —
         // this app drives its own voice through the Speaker.
         break;
+
+      case 'device_request':
+        // Poppy wants something only this phone can do.
+        unawaited(deviceTools?.handle(e.data) ?? Future.value());
     }
   }
 

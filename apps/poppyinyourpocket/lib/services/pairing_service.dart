@@ -7,6 +7,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -60,6 +61,7 @@ class PairingService {
   static const _keyApiKey = 'poppy_api_key';
   static const _keyUsername = 'poppy_username';
   static const _keyAgent = 'poppy_agent_id';
+  static const _keyDevice = 'poppy_device_id';
 
   final http.Client _http;
   PairingService({http.Client? httpClient}) : _http = httpClient ?? http.Client();
@@ -120,6 +122,22 @@ class PairingService {
   }
 
   Future<void> saveAgentId(String id) => _store.write(key: _keyAgent, value: id);
+
+  /// A stable id for this install, minted once.
+  ///
+  /// The runner routes a tool request to one device, so the identity has to
+  /// outlive a restart — otherwise every launch looks like a new phone and
+  /// the old one lingers as a device that never answers.
+  Future<String> deviceId() async {
+    final existing = await _store.read(key: _keyDevice);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final random = Random.secure();
+    final id = List.generate(16, (_) => random.nextInt(256))
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
+    await _store.write(key: _keyDevice, value: id);
+    return id;
+  }
 
   Future<void> forget() async {
     await Future.wait([

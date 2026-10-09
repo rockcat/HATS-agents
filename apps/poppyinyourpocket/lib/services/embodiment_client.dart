@@ -149,9 +149,56 @@ class EmbodimentClient {
 
   String backgroundUrl(String id) => '$baseUrl$_base/agents/${Uri.encodeComponent(id)}/background';
 
+  /// Declare what this device can do, so the runner can offer it to the agent.
+  ///
+  /// Only the device knows what it has and what the user allowed, which is
+  /// why the runner cannot work this out for itself.
+  Future<void> declareDevice(String deviceId, List<Map<String, dynamic>> tools,
+      {String? label}) async {
+    await _send('PUT', '/devices/${Uri.encodeComponent(deviceId)}',
+        {'tools': tools, if (label != null) 'label': label});
+  }
+
+  /// Stop offering this device's tools.
+  Future<void> withdrawDevice(String deviceId) async {
+    await _send('DELETE', '/devices/${Uri.encodeComponent(deviceId)}');
+  }
+
+  /// Answer something the agent asked this device to do.
+  Future<void> sendDeviceResult(String requestId,
+      {required bool ok, String? result, String? error}) async {
+    await _send('POST', '/device-results/${Uri.encodeComponent(requestId)}', {
+      'ok': ok,
+      if (result != null) 'result': result,
+      if (error != null) 'error': error,
+    });
+  }
+
+  Future<void> _send(String method, String path, [Map<String, dynamic>? body]) async {
+    final request = http.Request(method, _uri(path))
+      ..headers.addAll({..._headers, if (body != null) 'Content-Type': 'application/json'});
+    if (body != null) request.body = jsonEncode(body);
+
+    late http.StreamedResponse res;
+    try {
+      res = await _http.send(request);
+    } on Object catch (err) {
+      throw EmbodimentException('Cannot reach Poppy: $err');
+    }
+    if (res.statusCode >= 400) {
+      throw EmbodimentException('HTTP ${res.statusCode}', res.statusCode);
+    }
+  }
+
   /// The live event stream. Speech, state and replies all arrive here.
-  SseClient events({String? agentId}) => SseClient(
-        uri: _uri('/events', agentId == null ? null : {'agentId': agentId}),
+  ///
+  /// Passing [deviceId] also makes this the channel the runner uses to ask
+  /// this device to run a tool, and closing it withdraws the device.
+  SseClient events({String? agentId, String? deviceId}) => SseClient(
+        uri: _uri('/events', {
+          if (agentId != null) 'agentId': agentId,
+          if (deviceId != null) 'deviceId': deviceId,
+        }),
         headers: _headers,
       );
 

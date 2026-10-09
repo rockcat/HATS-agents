@@ -183,15 +183,19 @@ the way the runner says.
 walking out of range degrades honestly instead of hanging. This is the demo
 that proves the product.
 
-### 3 — The device-tool bridge
-- Embodiment API: `device_request` event, `device-results/{id}` endpoint,
-  capability declaration on connect.
-- Runner: `DeviceToolBridge` with correlation, timeout and per-agent routing.
-- One trivial tool end to end — `get_device_time` or similar — purely to prove
-  the round trip with tests on both halves.
+### 3 — The device-tool bridge — **done**
+- Embodiment API: `device_request` event, `PUT /devices/{id}` to declare,
+  `POST /device-results/{id}` to answer, `?deviceId=` on `/events`.
+- Runner: `DeviceToolBridge` — correlation, timeouts, and tools offered only
+  while a device that declared them is connected.
+- App: `DeviceToolHost`, with `get_device_time` as the trivial proof.
 
-**Done when:** an agent can call a tool that runs on the phone and read the
-answer, and gets a clean failure when the phone does not respond.
+Verified against a live runner: the agent called the tool, the request went
+down the event stream, the device answered, and the agent used the result.
+
+A device tool is routed before MCP and before the built-ins, and counts as
+`personal` for exposure — there are few of them and an agent that has to
+discover the camera will not think to look.
 
 ### 4 — Camera
 - `take_photo` and `record_clip` as device tools.

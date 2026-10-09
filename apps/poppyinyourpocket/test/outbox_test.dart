@@ -33,6 +33,8 @@ class _MemoryPairing extends PairingService {
   @override
   Future<void> saveAgentId(String id) async {}
   @override
+  Future<String> deviceId() async => 'test-device';
+  @override
   Future<void> forget() async => stored = null;
 }
 
