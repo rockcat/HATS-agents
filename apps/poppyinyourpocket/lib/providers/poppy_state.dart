@@ -59,6 +59,22 @@ class PoppyState extends ChangeNotifier {
   /// Said while disconnected, waiting to be sent. Not a queue of requests —
   /// a queue of things you told Poppy that she has not heard yet.
   final List<String> _outbox = [];
+
+  /// What this device said and expects to hear come back.
+  ///
+  /// The runner broadcasts the human's own message to every listener, so
+  /// what you type arrives twice: once because this app showed it
+  /// immediately, and again off the stream. Showing it optimistically is
+  /// worth keeping — it is what lets an offline message appear at all — so
+  /// the echo is absorbed instead.
+  ///
+  /// A message from somewhere else, the dashboard say, matches nothing here
+  /// and is shown, which is right: that one really is news.
+  final List<String> _awaitingEcho = [];
+
+  /// Enough to cover anything in flight. Bounded so a runner that never
+  /// echoes cannot grow this for ever.
+  static const _maxAwaitingEcho = 50;
   int get unsentCount => _outbox.length;
 
   bool get isPaired => pairing != null;
@@ -117,6 +133,7 @@ class PoppyState extends ChangeNotifier {
     agent = null;
     transcript = [];
     _outbox.clear();
+    _awaitingEcho.clear();
     connection = Connection.offline;
     notifyListeners();
   }
@@ -165,6 +182,8 @@ class PoppyState extends ChangeNotifier {
   Future<void> _loadTranscript() async {
     if (_client == null || agent == null) return;
     try {
+      // The server's copy is now the truth, so nothing is awaiting an echo.
+      _awaitingEcho.clear();
       transcript = await _client!.messages(agent!.id, limit: 100);
       notifyListeners();
     } on EmbodimentException {
@@ -208,6 +227,11 @@ class PoppyState extends ChangeNotifier {
         if (e.data['agentId'] != agent?.id) return;
         final role = e.data['role'] as String? ?? 'assistant';
         final content = e.data['content'] as String? ?? '';
+
+        // Our own words coming back. The echo is the runner confirming it
+        // heard, so it settles the message rather than repeating it.
+        if (role == 'user' && _absorbEcho(content)) return;
+
         transcript.add(TranscriptMessage(
           role: role,
           content: content,
@@ -319,6 +343,8 @@ class PoppyState extends ChangeNotifier {
       role: 'user', content: content, timestamp: DateTime.now(),
       pending: connection != Connection.online,
     ));
+    _awaitingEcho.add(content);
+    if (_awaitingEcho.length > _maxAwaitingEcho) _awaitingEcho.removeAt(0);
     notifyListeners();
 
     if (connection != Connection.online) {
@@ -352,6 +378,24 @@ class PoppyState extends ChangeNotifier {
     for (var i = 0; i < transcript.length; i++) {
       if (transcript[i].pending) transcript[i] = transcript[i].settled();
     }
+    notifyListeners();
+  }
+
+  /// True when this was our own message coming back, which is then marked
+  /// delivered — a better signal than the POST returning, since it means the
+  /// runner has it rather than merely accepted it.
+  bool _absorbEcho(String content) {
+    final i = _awaitingEcho.indexOf(content);
+    if (i < 0) return false;
+    _awaitingEcho.removeAt(i);
+    _settleMatching(content);
+    return true;
+  }
+
+  void _settleMatching(String content) {
+    final i = transcript.lastIndexWhere((m) => m.pending && m.content == content);
+    if (i < 0) return;
+    transcript[i] = transcript[i].settled();
     notifyListeners();
   }
 

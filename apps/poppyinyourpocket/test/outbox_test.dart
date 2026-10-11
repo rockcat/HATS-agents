@@ -139,4 +139,78 @@ void main() {
       expect(state.transcript, isEmpty);
     });
   });
+
+  group('the runner echoing your own message back', () {
+    // The runner broadcasts the human's message to every listener, so what you
+    // type arrives twice: once because the app showed it straight away, and
+    // again off the stream.
+    Map<String, dynamic> echo(String content) => {
+          'agentId': 'a1',
+          'role': 'user',
+          'content': content,
+          'timestamp': DateTime.now().toIso8601String(),
+        };
+
+    test('shows it once, not twice', () async {
+      state.setConnectionForTest(Connection.online);
+      await state.say('hello');
+      state.handleEventForTest('agent_message', echo('hello'));
+
+      expect(state.transcript.where((m) => m.content == 'hello'), hasLength(1));
+    });
+
+    test('takes the echo as confirmation that it was heard', () async {
+      // A better signal than the POST returning: the runner has it, rather
+      // than merely having accepted it.
+      state.setConnectionForTest(Connection.offline);
+      await state.say('hello');
+      expect(state.transcript.last.pending, isTrue);
+
+      state.setConnectionForTest(Connection.online);
+      await Future<void>.delayed(Duration.zero);
+      state.handleEventForTest('agent_message', echo('hello'));
+
+      expect(state.transcript.last.pending, isFalse);
+    });
+
+    test('still shows a message sent from somewhere else', () async {
+      // From the dashboard, say. That one really is news.
+      state.setConnectionForTest(Connection.online);
+      state.handleEventForTest('agent_message', echo('sent from the dashboard'));
+
+      expect(state.transcript.single.content, 'sent from the dashboard');
+    });
+
+    test('absorbs one echo per identical message, not all of them', () async {
+      state.setConnectionForTest(Connection.online);
+      await state.say('again');
+      await state.say('again');
+
+      state.handleEventForTest('agent_message', echo('again'));
+      state.handleEventForTest('agent_message', echo('again'));
+
+      expect(state.transcript.where((m) => m.content == 'again'), hasLength(2));
+    });
+
+    test('shows a second echo, which cannot have been ours', () async {
+      state.setConnectionForTest(Connection.online);
+      await state.say('again');
+      state.handleEventForTest('agent_message', echo('again'));
+      state.handleEventForTest('agent_message', echo('again'));
+
+      expect(state.transcript.where((m) => m.content == 'again'), hasLength(2));
+    });
+
+    test('leaves an assistant reply alone', () async {
+      state.setConnectionForTest(Connection.online);
+      await state.say('hello');
+      state.handleEventForTest('agent_message', {
+        'agentId': 'a1', 'role': 'assistant', 'content': 'hello',
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      // Same text, but Poppy saying it is a different thing entirely.
+      expect(state.transcript.where((m) => m.content == 'hello'), hasLength(2));
+    });
+  });
 }
