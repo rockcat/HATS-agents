@@ -165,12 +165,23 @@ class EmbodimentClient {
   }
 
   /// Answer something the agent asked this device to do.
+  /// Answer something the runner asked this device to do.
+  ///
+  /// [image] is base64 with no data: prefix, for a tool that produced a
+  /// picture. It travels in the JSON body rather than as an upload because
+  /// the runner correlates it by request id, and one round trip is enough.
   Future<void> sendDeviceResult(String requestId,
-      {required bool ok, String? result, String? error}) async {
+      {required bool ok,
+      String? result,
+      String? error,
+      String? imageBase64,
+      String imageMediaType = 'image/jpeg'}) async {
     await _send('POST', '/device-results/${Uri.encodeComponent(requestId)}', {
       'ok': ok,
       if (result != null) 'result': result,
       if (error != null) 'error': error,
+      if (imageBase64 != null)
+        'image': {'mediaType': imageMediaType, 'base64': imageBase64},
     });
   }
 

@@ -19,8 +19,27 @@ import 'dart:async';
 
 import 'embodiment_client.dart';
 
-/// Runs one tool. Returns what the agent should read.
-typedef DeviceToolRun = Future<String> Function(Map<String, dynamic> arguments);
+/// What a tool produced.
+///
+/// The text always stands on its own. A picture may not survive the trip —
+/// the runner drops one too large for the model, and a provider that cannot
+/// see ignores it — so an agent reading only the text must still be told
+/// what happened.
+class DeviceToolResult {
+  final String text;
+
+  /// A picture, base64, with no data: prefix.
+  final String? imageBase64;
+  final String imageMediaType;
+
+  const DeviceToolResult(this.text, {
+    this.imageBase64,
+    this.imageMediaType = 'image/jpeg',
+  });
+}
+
+/// Runs one tool. Returns what the agent should read, and optionally see.
+typedef DeviceToolRun = Future<DeviceToolResult> Function(Map<String, dynamic> arguments);
 
 class DeviceTool {
   final String name;
@@ -69,6 +88,9 @@ class DeviceToolHost {
 
   List<DeviceTool> get tools => _tools.values.toList();
 
+  /// Is this tool being offered?
+  bool has(String name) => _tools.containsKey(name);
+
   /// Add or replace a tool. Takes effect at the next [declare].
   void add(DeviceTool tool) => _tools[tool.name] = tool;
 
@@ -109,8 +131,8 @@ class DeviceToolHost {
         return;
       }
       final args = (event['arguments'] as Map?)?.cast<String, dynamic>() ?? const {};
-      final result = await tool.run(args);
-      await _answer(id, ok: true, result: result);
+      final produced = await tool.run(args);
+      await _answer(id, ok: true, produced: produced);
     } catch (err) {
       // Whatever went wrong, the agent is told. Silence would cost it the full
       // timeout and teach it nothing.
@@ -120,9 +142,15 @@ class DeviceToolHost {
     }
   }
 
-  Future<void> _answer(String id, {required bool ok, String? result, String? error}) async {
+  Future<void> _answer(String id,
+      {required bool ok, DeviceToolResult? produced, String? error}) async {
     try {
-      await client.sendDeviceResult(id, ok: ok, result: result, error: error);
+      await client.sendDeviceResult(id,
+          ok: ok,
+          result: produced?.text,
+          error: error,
+          imageBase64: produced?.imageBase64,
+          imageMediaType: produced?.imageMediaType ?? 'image/jpeg');
     } on EmbodimentException {
       // The runner will time the request out; nothing better is available.
     }
@@ -141,7 +169,8 @@ List<DeviceTool> defaultDeviceTools() => [
             'Useful when the user says "this morning" or "tonight" and you need to know theirs.',
         run: (_) async {
           final now = DateTime.now();
-          return '${now.toIso8601String()} (${now.timeZoneName}, UTC${_offset(now)})';
+          return DeviceToolResult(
+              '${now.toIso8601String()} (${now.timeZoneName}, UTC${_offset(now)})');
         },
       ),
     ];

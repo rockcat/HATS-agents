@@ -18,6 +18,10 @@ dependencies:
   # The API key from QR pairing — keychain on iOS, EncryptedSharedPreferences on Android.
   flutter_secure_storage: ^10.3.1
   mobile_scanner: ^5.2.0
+  # Poppy looking at something, as a device tool. Captured at a modest
+  # resolution rather than downscaled afterwards: a full-size frame would be
+  # decoded and re-encoded for nothing, and a 720p JPEG is what the model wants.
+  camera: ^0.11.0+2
   # Speech-to-text runs on the device: Poppy hears you with no connection.
   speech_to_text: ^7.4.0
   # The platform voice: instant, offline, no server round trip.

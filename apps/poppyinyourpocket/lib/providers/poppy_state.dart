@@ -11,7 +11,9 @@ import 'package:flutter/foundation.dart';
 
 import '../models/embodied_agent.dart';
 import '../models/transcript_message.dart';
+import '../services/camera_tool.dart';
 import '../services/device_tools.dart';
+import '../services/permissions.dart';
 import '../services/embodiment_client.dart';
 import '../services/pairing_service.dart';
 import '../services/speaker.dart';
@@ -66,6 +68,9 @@ class PoppyState extends ChangeNotifier {
   /// What this phone can do for Poppy that the runner cannot.
   DeviceToolHost? deviceTools;
   String? _deviceId;
+
+  /// The camera, built once: it owns the controller and the idle timer.
+  late final CameraCapture _camera = CameraCapture(onCapture: _notePhoto);
 
   /// Said while disconnected, waiting to be sent. Not a queue of requests —
   /// a queue of things you told Poppy that she has not heard yet.
@@ -146,6 +151,51 @@ class PoppyState extends ChangeNotifier {
       label: pairing?.username ?? 'phone',
       tools: defaultDeviceTools(),
     );
+    await _offerCameraIfUsable();
+  }
+
+  /// Offer the camera only if there is one and we may use it.
+  ///
+  /// The runner hands the agent exactly what is declared here, so a tool
+  /// listed without the permission behind it becomes one the agent calls
+  /// over and over and never gets anything from.
+  Future<void> _offerCameraIfUsable() async {
+    final host = deviceTools;
+    if (host == null) return;
+    if (!await _camera.isAvailable() || !await cameraPermission()) return;
+    host.add(takePhotoTool(_camera));
+  }
+
+  /// Ask for the camera, and start offering it if the answer is yes.
+  ///
+  /// Separate from the check above so the permission prompt appears when
+  /// the user did something, not out of nowhere on launch.
+  Future<bool> requestCamera() async {
+    if (!await requestCameraPermission()) return false;
+    await _offerCameraIfUsable();
+    await deviceTools?.declare();
+    notifyListeners();
+    return true;
+  }
+
+  /// Is the camera being offered to the agent right now?
+  bool get offersCamera => deviceTools?.has('take_photo') ?? false;
+
+  /// Note in the transcript that a photo was taken.
+  ///
+  /// A camera that fires with no trace is the kind of thing that costs an
+  /// app the benefit of the doubt, however good the reason.
+  void _notePhoto(Lens lens) {
+    transcript = [
+      ...transcript,
+      TranscriptMessage(
+        role: 'tool',
+        toolName: 'take_photo',
+        content: 'Took a photo with the ${lens == Lens.front ? 'front' : 'back'} camera.',
+        timestamp: DateTime.now(),
+      ),
+    ];
+    notifyListeners();
   }
 
   Future<void> forget() async {

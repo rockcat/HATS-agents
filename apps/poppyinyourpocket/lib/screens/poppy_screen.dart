@@ -68,6 +68,7 @@ class _PoppyScreenState extends State<PoppyScreen> {
       appBar: AppBar(
         title: Text(state.agent!.name),
         actions: [
+          _CameraButton(offered: state.offersCamera),
           _VoiceMenu(mode: state.speechMode),
           _ForgetButton(serverUrl: state.pairing?.serverUrl),
         ],
@@ -121,6 +122,36 @@ class _PoppyScreenState extends State<PoppyScreen> {
       ),
     );
   }
+}
+
+/// Whether Poppy may use the camera.
+///
+/// Shown whether or not it is granted, so the state is visible rather than
+/// something you discover by asking her to look at something and being told
+/// she cannot. Tapping prompts; the agent is only offered the tool once the
+/// answer is yes.
+class _CameraButton extends StatelessWidget {
+  final bool offered;
+  const _CameraButton({required this.offered});
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: offered
+            ? 'Poppy can use the camera'
+            : 'Let Poppy use the camera',
+        icon: Icon(offered ? Icons.photo_camera : Icons.no_photography),
+        onPressed: offered
+            ? null
+            : () async {
+                final messenger = ScaffoldMessenger.of(context);
+                final granted = await context.read<PoppyState>().requestCamera();
+                if (!granted) {
+                  messenger.showSnackBar(const SnackBar(
+                    content: Text('Without the camera, Poppy cannot see anything.'),
+                  ));
+                }
+              },
+      );
 }
 
 /// Unpair, and say which runner is being unpaired from.

@@ -27,9 +27,18 @@ class _RecordingClient extends EmbodimentClient {
   }
 
   @override
-  Future<void> sendDeviceResult(String requestId, {required bool ok, String? result, String? error}) async {
+  Future<void> sendDeviceResult(String requestId,
+      {required bool ok,
+      String? result,
+      String? error,
+      String? imageBase64,
+      String imageMediaType = 'image/jpeg'}) async {
     if (!reachable) throw EmbodimentException('unreachable');
-    results.add({'id': requestId, 'ok': ok, 'result': result, 'error': error});
+    results.add({
+      'id': requestId, 'ok': ok, 'result': result, 'error': error,
+      if (imageBase64 != null) 'image': imageBase64,
+      if (imageBase64 != null) 'mediaType': imageMediaType,
+    });
   }
 }
 
@@ -66,7 +75,7 @@ void main() {
 
     test('an added tool is declared alongside the rest', () async {
       final host = hostWith(defaultDeviceTools())
-        ..add(DeviceTool(name: 'ping', description: 'Say pong.', run: (_) async => 'pong'));
+        ..add(DeviceTool(name: 'ping', description: 'Say pong.', run: (_) async => const DeviceToolResult('pong')));
       await host.declare();
       expect(client.declared?.map((t) => t['name']), containsAll(['get_device_time', 'ping']));
     });
@@ -75,7 +84,7 @@ void main() {
   group('answering a request', () {
     test('runs the tool and sends the result back', () async {
       final host = hostWith([
-        DeviceTool(name: 'ping', description: 'Say pong.', run: (_) async => 'pong'),
+        DeviceTool(name: 'ping', description: 'Say pong.', run: (_) async => const DeviceToolResult('pong')),
       ]);
       await host.handle(request('ping'));
 
@@ -90,7 +99,7 @@ void main() {
         DeviceTool(
           name: 'echo',
           description: 'Echo.',
-          run: (args) async { seen = args['text'] as String?; return 'ok'; },
+          run: (args) async { seen = args['text'] as String?; return const DeviceToolResult('ok'); },
         ),
       ]);
       await host.handle(request('echo', args: {'text': 'hello'}));
@@ -124,7 +133,7 @@ void main() {
           run: (_) async {
             runs++;
             await Future<void>.delayed(const Duration(milliseconds: 20));
-            return 'done';
+            return const DeviceToolResult('done');
           },
         ),
       ]);
@@ -136,7 +145,7 @@ void main() {
     test('handles the same tool again once the first has finished', () async {
       var runs = 0;
       final host = hostWith([
-        DeviceTool(name: 'ping', description: 'Pong.', run: (_) async { runs++; return 'pong'; }),
+        DeviceTool(name: 'ping', description: 'Pong.', run: (_) async { runs++; return const DeviceToolResult('pong'); }),
       ]);
       await host.handle(request('ping', id: 'r1'));
       await host.handle(request('ping', id: 'r2'));
@@ -153,7 +162,7 @@ void main() {
     test('does not break when the answer cannot be delivered', () async {
       client.reachable = false;
       final host = hostWith([
-        DeviceTool(name: 'ping', description: 'Pong.', run: (_) async => 'pong'),
+        DeviceTool(name: 'ping', description: 'Pong.', run: (_) async => const DeviceToolResult('pong')),
       ]);
       await host.handle(request('ping'));
       expect(client.results, isEmpty); // the runner times it out instead
