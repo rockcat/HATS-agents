@@ -42,6 +42,17 @@ class PoppyState extends ChangeNotifier {
             ((p) => EmbodimentClient(baseUrl: p.serverUrl, apiKey: p.apiKey));
 
   Pairing? pairing;
+
+  /// The pairing `forget()` just threw away.
+  ///
+  /// Unpairing is one tap and the pairing screen has nothing behind it, so
+  /// without this a mis-tap is unrecoverable without the dashboard and a
+  /// fresh QR code. Held only for this session: it is a way back out of a
+  /// screen, not a second copy of the credential.
+  Pairing? _previous;
+
+  /// Is there a pairing to go back to if the user cancels?
+  bool get canCancelPairing => _previous != null;
   EmbodimentClient? _client;
   SseClient? _sse;
   StreamSubscription<SseEvent>? _eventSub;
@@ -100,7 +111,20 @@ class PoppyState extends ChangeNotifier {
     await refreshAgents();
   }
 
+  /// Back out of pairing, restoring what `forget()` discarded.
+  ///
+  /// Nothing to restore means nothing to cancel to — the caller checks
+  /// `canCancelPairing` and does not offer the option.
+  Future<void> cancelPairing() async {
+    final previous = _previous;
+    if (previous == null) return;
+    _previous = null;
+    await _pairing.save(previous);
+    await completePairing(previous);
+  }
+
   Future<void> completePairing(Pairing p) async {
+    _previous = null;
     pairing = p;
     _client = _clientFor(p);
     await _buildDeviceHost();
@@ -126,6 +150,7 @@ class PoppyState extends ChangeNotifier {
 
   Future<void> forget() async {
     _disconnect();
+    _previous = pairing;
     await _pairing.forget();
     pairing = null;
     _client = null;

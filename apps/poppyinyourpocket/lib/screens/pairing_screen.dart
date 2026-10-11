@@ -58,35 +58,57 @@ class _PairingScreenState extends State<PairingScreen> {
   bool _busy = false;
   String? _error;
 
+  /// Which attempt is current.
+  ///
+  /// An in-flight request cannot be called back, so cancelling bumps this
+  /// and the late answer is dropped on arrival. Without it, abandoning a
+  /// doomed attempt and starting a good one lets the first one land on top
+  /// of the second.
+  int _attempt = 0;
+
   @override
   void dispose() {
     _manual.dispose();
     super.dispose();
   }
 
+  /// Give up on the attempt in flight and hand the form back.
+  void _abandon() {
+    _attempt++;
+    setState(() { _busy = false; _scanning = false; _error = null; });
+  }
+
   Future<void> _redeem(String url) async {
     if (_busy) return;
+    final attempt = ++_attempt;
     setState(() { _busy = true; _error = null; });
     try {
       final paired = await _pairing.redeem(url);
-      if (!mounted) return;
+      if (!mounted || attempt != _attempt) return;
       await context.read<PoppyState>().completePairing(paired);
     } on PairingException catch (err) {
-      if (mounted) setState(() { _error = err.message; _scanning = false; });
+      if (mounted && attempt == _attempt) {
+        setState(() { _error = err.message; _scanning = false; });
+      }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && attempt == _attempt) setState(() => _busy = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Unpairing is one tap from the main screen, so a mis-tap lands here with
+    // nothing behind it. If that is how we arrived, offer the way back.
+    final canGoBack = context.watch<PoppyState>().canCancelPairing;
+
     if (_scanning) {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Scan the code'),
           leading: IconButton(
+            tooltip: 'Stop scanning',
             icon: const Icon(Icons.close),
-            onPressed: () => setState(() => _scanning = false),
+            onPressed: _abandon,
           ),
         ),
         body: MobileScanner(
@@ -98,7 +120,7 @@ class _PairingScreenState extends State<PairingScreen> {
           // otherwise, which reads as "broken" rather than "not set up".
           errorBuilder: (context, error, _) => _CameraUnavailable(
             error: error.errorDetails?.message ?? error.errorCode.name,
-            onBack: () => setState(() => _scanning = false),
+            onBack: _abandon,
           ),
         ),
       );
@@ -147,12 +169,29 @@ class _PairingScreenState extends State<PairingScreen> {
                   onSubmitted: _redeem,
                 ),
                 const SizedBox(height: 10),
-                TextButton(
-                  onPressed: _busy ? null : () => _redeem(_manual.text),
-                  child: _busy
-                      ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Pair'),
-                ),
+                if (_busy)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 16, width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
+                      const SizedBox(width: 12),
+                      TextButton(onPressed: _abandon, child: const Text('Cancel')),
+                    ],
+                  )
+                else
+                  TextButton(
+                    onPressed: () => _redeem(_manual.text),
+                    child: const Text('Pair'),
+                  ),
+                if (canGoBack && !_busy) ...[
+                  const SizedBox(height: 4),
+                  TextButton.icon(
+                    onPressed: () => context.read<PoppyState>().cancelPairing(),
+                    icon: const Icon(Icons.arrow_back, size: 18),
+                    label: const Text('Back to Poppy'),
+                  ),
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: 16),
                   Text(_error!,

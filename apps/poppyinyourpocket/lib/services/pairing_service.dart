@@ -6,6 +6,7 @@
 /// looking at; it never decides what she is willing to do.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -66,14 +67,27 @@ class PairingService {
   final http.Client _http;
   PairingService({http.Client? httpClient}) : _http = httpClient ?? http.Client();
 
+  /// How long to wait before calling an address unreachable.
+  ///
+  /// A wrong address on the same subnet does not refuse the connection, it
+  /// drops the packets — so without this the request hangs for the platform
+  /// default with the whole screen disabled behind it.
+  static const redeemTimeout = Duration(seconds: 12);
+
   /// Redeem a scanned pairing URL. Single use: the dashboard invalidates it.
-  Future<Pairing> redeem(String scannedUrl) async {
+  Future<Pairing> redeem(String scannedUrl, {Duration? timeout}) async {
     final uri = Uri.tryParse(scannedUrl.trim());
     if (uri == null || !uri.hasScheme) throw PairingException('That is not a pairing code.');
 
     late http.Response res;
     try {
-      res = await _http.get(uri, headers: {'Accept': 'application/json'});
+      res = await _http
+          .get(uri, headers: {'Accept': 'application/json'})
+          .timeout(timeout ?? redeemTimeout);
+    } on TimeoutException {
+      throw PairingException(
+          'No answer from ${uri.host}:${uri.port}. The runner may be on a different '
+          'address — the dashboard lists every one this machine has.');
     } on Object catch (err) {
       throw PairingException('Could not reach $uri — is the runner on this network? ($err)');
     }
