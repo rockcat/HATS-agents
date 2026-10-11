@@ -197,14 +197,25 @@ A device tool is routed before MCP and before the built-ins, and counts as
 `personal` for exposure — there are few of them and an agent that has to
 discover the camera will not think to look.
 
-### 4 — Camera
-- `take_photo` and `record_clip` as device tools.
-- Permission handling, and capability declaration reflecting the real answer.
-- Decide where images go: passed inline to a vision-capable model, or stored in
-  the project's `outputs/`. Inline is simpler; storage is needed if Poppy is to
-  refer back to them.
+### 4 — Camera *(take_photo done; record_clip not started)*
+- `take_photo` as a device tool, captured at ~720p rather than downscaled
+  afterwards. Both: shown inline to the model *and* written to
+  `outputs/device/`, so Poppy can refer back to a photo once the thread has
+  moved on.
+- Permission handling: the tool is declared only when there is a camera and
+  permission is granted, and re-declared the moment it is. The app bar shows
+  which, and asks when tapped.
+- Every capture is noted in the transcript. A camera that fires with no trace
+  costs the app the benefit of the doubt, whatever the reason.
+- An oversized or unsupported image is dropped at the runner with a sentence
+  the agent can read: Anthropic rejects one over 5MB and fails the whole
+  request with it, which would cost the answer as well as the picture.
 
-**Done when:** "what am I holding?" works.
+**Still to do:** `record_clip`. No model takes video inline, so a clip would
+be saved to the project and described by path — a different shape from a
+photo, not just a longer one.
+
+**Done when:** "what am I holding?" works. It does.
 
 ### 5 — Face recognition and people
 - On-device detect → embed → match, exposed as device tools `identify_person`

@@ -34,11 +34,17 @@ class PoppyState extends ChangeNotifier {
   /// it reaches for a binding the moment it exists.
   final Speaker Function(SpeechMode, PoppyState)? _speakerFor;
 
+  /// How to build the camera. A seam for tests: the real one reaches for
+  /// the platform the moment it is asked whether a camera exists.
+  final CameraCapture Function(void Function(Lens))? _cameraFor;
+
   PoppyState({
     PairingService? pairing,
     EmbodimentClient Function(Pairing)? clientFactory,
     Speaker Function(SpeechMode, PoppyState)? speakerFactory,
+    CameraCapture Function(void Function(Lens))? cameraFactory,
   })  : _pairing = pairing ?? PairingService(),
+        _cameraFor = cameraFactory,
         _speakerFor = speakerFactory,
         _clientFor = clientFactory ??
             ((p) => EmbodimentClient(baseUrl: p.serverUrl, apiKey: p.apiKey));
@@ -70,7 +76,8 @@ class PoppyState extends ChangeNotifier {
   String? _deviceId;
 
   /// The camera, built once: it owns the controller and the idle timer.
-  late final CameraCapture _camera = CameraCapture(onCapture: _notePhoto);
+  late final CameraCapture _camera =
+      _cameraFor?.call(_notePhoto) ?? CameraCapture(onCapture: _notePhoto);
 
   /// Said while disconnected, waiting to be sent. Not a queue of requests —
   /// a queue of things you told Poppy that she has not heard yet.
