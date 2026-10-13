@@ -166,6 +166,12 @@ class VoiceInput {
   }
 
   void _onResult(String text, bool isFinal) {
+    // The platform usually delivers its last result a beat after stop()
+    // returns, and by then the caller has moved on — in the app, it has sent
+    // the sentence and cleared the box, which this would silently refill.
+    // Results during settling still count: that is the end of the sentence.
+    if (_state == Hearing.idle) return;
+
     // A final result that is empty does not erase a partial one: the
     // recogniser sometimes settles on nothing after hearing something.
     if (text.isNotEmpty) _heard = text;

@@ -203,6 +203,8 @@ void main() {
     });
   });
 
+  lateResults();
+
   group('the state the button follows', () {
     test('passes through settling on the way down', () async {
       await voice.start();
@@ -224,4 +226,84 @@ void main() {
       expect(voice.isListening, isFalse);
     });
   });
+}
+
+// ── After the utterance is over ──────────────────────────────────────────────
+//
+// The platform recogniser usually delivers its final result a beat after stop()
+// returns. Anything still listening to it then will act on words the user has
+// already sent — in the app, by writing them back into a box that was just
+// cleared.
+
+void lateResults() {
+  late _FakeRecogniser recogniser;
+  late List<String> heard;
+  late VoiceInput voice;
+
+  setUp(() {
+    recogniser = _FakeRecogniser();
+    heard = [];
+    voice = VoiceInput(recogniser: recogniser, onHeard: (text, _) => heard.add(text));
+  });
+
+  group('a result that arrives after we stopped', () {
+    test('is ignored, so it cannot undo what the caller did next', () async {
+      await voice.start();
+      recogniser.hear('send this');
+      await voice.stop();
+      heard.clear();
+
+      // The platform catching up, after the caller has sent and cleared.
+      recogniser.hear('send this', isFinal: true);
+
+      expect(heard, isEmpty);
+    });
+
+    test('still counts while the stop is settling', () async {
+      // The last word genuinely does land after stop() is called, and losing
+      // it would mean losing the end of every sentence.
+      final slow = _SlowStopRecogniser();
+      final settling = <String>[];
+      final v = VoiceInput(recogniser: slow, onHeard: (text, _) => settling.add(text));
+
+      await v.start();
+      final stopping = v.stop();
+      slow.hear('the last word', isFinal: true);
+      await stopping;
+
+      expect(settling, contains('the last word'));
+      expect(v.heard, 'the last word');
+    });
+
+    test('is ignored after a cancel too', () async {
+      await voice.start();
+      await voice.cancel();
+      heard.clear();
+
+      recogniser.hear('too late', isFinal: true);
+
+      expect(heard, isEmpty);
+      expect(voice.heard, isEmpty);
+    });
+
+    test('does not resurrect text for the next utterance', () async {
+      await voice.start();
+      recogniser.hear('first thing');
+      await voice.stop();
+      recogniser.hear('first thing', isFinal: true); // late
+
+      await voice.start();
+
+      expect(voice.heard, isEmpty);
+    });
+  });
+}
+
+/// A recogniser whose stop takes a moment, like the real one.
+class _SlowStopRecogniser extends _FakeRecogniser {
+  @override
+  Future<void> stop() async {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    return super.stop();
+  }
 }
