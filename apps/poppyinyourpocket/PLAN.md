@@ -167,7 +167,11 @@ Each phase should end somewhere demonstrable.
 the way the runner says.
 
 ### 2 — The conversation loop
-- Push-to-talk → `speech_to_text` → `POST /agents/{id}/messages`.
+- ~~Push-to-talk → `speech_to_text`.~~ **Done.** Click to start, click to
+  stop — not hold-to-talk, because a phone is held in one hand. The platform
+  recogniser, so nothing leaves the device; partial results land in the text
+  field as they settle, where the keyboard can fix them before Poppy sees
+  anything. Not Whisper: weaker on hard audio, free and offline in exchange.
 - `agent_message` over SSE into a transcript.
 - ~~Speech out.~~ **Done.** Two voices behind one interface: the platform
   voice (instant, offline, mouth estimated from spelling) or Piper through

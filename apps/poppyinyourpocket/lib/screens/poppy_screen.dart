@@ -9,6 +9,7 @@ import 'package:hats_avatar_view/hats_avatar_view.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/poppy_state.dart';
+import '../services/voice_input.dart';
 import '../services/speaker.dart';
 import '../widgets/connection_banner.dart';
 import '../widgets/transcript_list.dart';
@@ -24,6 +25,15 @@ class _PoppyScreenState extends State<PoppyScreen> {
   final _input = TextEditingController();
   final _avatarKey = GlobalKey<AvatarViewState>();
 
+  /// Hearing you, on the device. Built here rather than in PoppyState
+  /// because what it produces goes into this text field, not to the runner —
+  /// you read it back and fix it before Poppy ever sees it.
+  late final VoiceInput _listener;
+
+  /// What the field held before dictation started, so a correction replaces
+  /// only the dictated part rather than everything already typed.
+  String _beforeDictation = '';
+
   @override
   void initState() {
     super.initState();
@@ -31,18 +41,58 @@ class _PoppyScreenState extends State<PoppyScreen> {
     final state = context.read<PoppyState>();
     state.onLipSync = (visemes) => _avatarKey.currentState?.applyLipSync(visemes);
     state.setSpeechMode(state.speechMode);
+
+    _listener = VoiceInput(
+      onHeard: _onHeard,
+      onState: (_) { if (mounted) setState(() {}); },
+      onError: _complain,
+    );
   }
 
   @override
   void dispose() {
+    _listener.cancel();
     _input.dispose();
     super.dispose();
   }
 
+  /// Show what was heard, as it settles.
+  ///
+  /// Written into the field rather than held aside: recognition is usually
+  /// nearly right, and the fastest fix is the keyboard already on screen.
+  void _onHeard(String text, bool isFinal) {
+    final join = _beforeDictation.isEmpty || _beforeDictation.endsWith(' ') ? '' : ' ';
+    final full = _beforeDictation + join + text;
+    _input.value = TextEditingValue(
+      text: full,
+      selection: TextSelection.collapsed(offset: full.length),
+    );
+  }
+
+  void _complain(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _toggleListening() async {
+    if (_listener.isListening) {
+      await _listener.stop();
+    } else {
+      _beforeDictation = _input.text;
+      await _listener.start();
+    }
+    if (mounted) setState(() {});
+  }
+
   Future<void> _send(PoppyState state) async {
+    // Sending while still listening counts what you just said: the
+    // recogniser's last word usually lands before the stop does.
+    if (_listener.isListening) await _listener.stop();
+
     final text = _input.text;
     if (text.trim().isEmpty) return;
     _input.clear();
+    _beforeDictation = '';
     await state.say(text);
   }
 
@@ -102,14 +152,18 @@ class _PoppyScreenState extends State<PoppyScreen> {
                       controller: _input,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(state),
-                      decoration: const InputDecoration(
-                        hintText: 'Say something to Poppy…',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        hintText: _listener.isListening
+                            ? 'Listening…'
+                            : 'Say something to Poppy…',
+                        border: const OutlineInputBorder(),
                         isDense: true,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 4),
+                  _MicButton(hearing: _listener.state, onPressed: _toggleListening),
+                  const SizedBox(width: 4),
                   IconButton.filled(
                     onPressed: () => _send(state),
                     icon: const Icon(Icons.send),
@@ -119,6 +173,36 @@ class _PoppyScreenState extends State<PoppyScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Talk instead of typing.
+///
+/// Click to start and click to stop, not hold-to-talk. A phone is held in
+/// one hand, and a finger pinned to a button for the length of a sentence is
+/// both awkward and easy to slip off.
+class _MicButton extends StatelessWidget {
+  final Hearing hearing;
+  final VoidCallback onPressed;
+  const _MicButton({required this.hearing, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final colours = Theme.of(context).colorScheme;
+    final listening = hearing != Hearing.idle;
+    return IconButton(
+      tooltip: listening ? 'Stop listening' : 'Speak to Poppy',
+      // Disabled only while settling: the recogniser is still deciding, and
+      // a second tap there would cancel what it is about to hand over.
+      onPressed: hearing == Hearing.settling ? null : onPressed,
+      style: IconButton.styleFrom(
+        backgroundColor: listening ? colours.errorContainer : null,
+      ),
+      icon: Icon(
+        listening ? Icons.mic : Icons.mic_none,
+        color: listening ? colours.onErrorContainer : null,
       ),
     );
   }
