@@ -240,13 +240,14 @@ void lateResults() {
   late List<String> heard;
   late VoiceInput voice;
 
-  setUp(() {
-    recogniser = _FakeRecogniser();
-    heard = [];
-    voice = VoiceInput(recogniser: recogniser, onHeard: (text, _) => heard.add(text));
-  });
-
+  // Inside the group, not beside it: a setUp registered at file scope runs
+  // for every test in the file, including the other groups' own.
   group('a result that arrives after we stopped', () {
+    setUp(() {
+      recogniser = _FakeRecogniser();
+      heard = [];
+      voice = VoiceInput(recogniser: recogniser, onHeard: (text, _) => heard.add(text));
+    });
     test('is ignored, so it cannot undo what the caller did next', () async {
       await voice.start();
       recogniser.hear('send this');

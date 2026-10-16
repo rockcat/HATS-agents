@@ -159,6 +159,25 @@ class PoppyState extends ChangeNotifier {
       tools: defaultDeviceTools(),
     );
     await _offerCameraIfUsable();
+    await _declareCapabilities();
+  }
+
+  /// Tell the runner what this phone can do for itself.
+  ///
+  /// Not the same as offering a tool: the runner never calls these, it reads
+  /// them to decide how to do its own work. Face embedding is the one that
+  /// matters — doing it here means a vector crosses the wire instead of a
+  /// photograph — and it is deliberately not claimed yet, because nothing in
+  /// this app can do it. Claiming it would make the runner stop sending
+  /// pictures and wait for vectors that never come.
+  Future<void> _declareCapabilities() async {
+    final host = deviceTools;
+    if (host == null) return;
+    host.capabilities = {
+      if (await _camera.isAvailable() && await cameraPermission())
+        'camera': {'lenses': ['back', 'front']},
+      'speech': {'recognition': true, 'synthesis': true},
+    };
   }
 
   /// Offer the camera only if there is one and we may use it.

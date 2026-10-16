@@ -8,16 +8,20 @@ class _RecordingClient extends EmbodimentClient {
   final List<Map<String, dynamic>> results = [];
   List<Map<String, dynamic>>? declared;
   String? declaredLabel;
+  Map<String, dynamic>? declaredCapabilities;
   int withdrawals = 0;
   bool reachable = true;
 
   _RecordingClient() : super(baseUrl: 'http://test', apiKey: 'k', httpClient: http.Client());
 
   @override
-  Future<void> declareDevice(String deviceId, List<Map<String, dynamic>> tools, {String? label}) async {
+  Future<Map<String, dynamic>> declareDevice(String deviceId, List<Map<String, dynamic>> tools,
+      {String? label, Map<String, dynamic>? capabilities}) async {
     if (!reachable) throw EmbodimentException('unreachable');
     declared = tools;
     declaredLabel = label;
+    declaredCapabilities = capabilities;
+    return const {};
   }
 
   @override

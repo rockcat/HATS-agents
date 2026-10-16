@@ -99,9 +99,24 @@ class DeviceToolHost {
 
   /// Tell the runner what this device can do. Safe to call again at any time;
   /// the runner replaces the previous list rather than merging.
+  /// What this device can do for itself, beyond the tools it offers.
+  ///
+  /// Not the same thing as a tool: the runner never calls these, it reads
+  /// them to decide how to do its own job. Whether a face is embedded here
+  /// or on the runner is settled from this.
+  Map<String, dynamic> capabilities = const {};
+
+  /// What the runner and this device settled on, after [declare].
+  Map<String, dynamic> agreed = const {};
+
   Future<bool> declare() async {
     try {
-      await client.declareDevice(deviceId, _tools.values.map((t) => t.toJson()).toList(), label: label);
+      agreed = await client.declareDevice(
+        deviceId,
+        _tools.values.map((t) => t.toJson()).toList(),
+        label: label,
+        capabilities: capabilities.isEmpty ? null : capabilities,
+      );
       return true;
     } on EmbodimentException {
       // Not fatal. The conversation works without any of this.

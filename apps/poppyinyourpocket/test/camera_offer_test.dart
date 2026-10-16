@@ -20,8 +20,8 @@ class _QuietClient extends EmbodimentClient {
   @override
   Future<List<EmbodiedAgent>> agents() async => [];
   @override
-  Future<void> declareDevice(String deviceId, List<Map<String, dynamic>> tools,
-      {String? label}) async {}
+  Future<Map<String, dynamic>> declareDevice(String deviceId, List<Map<String, dynamic>> tools,
+      {String? label, Map<String, dynamic>? capabilities}) async => const {};
 }
 
 class _MemoryPairing extends PairingService {
@@ -135,6 +135,8 @@ void main() {
     });
   });
 
+  capabilityDeclaration();
+
   group('noting that a photo was taken', () {
     test('puts it in the transcript, so the camera never fires silently', () async {
       granted = true;
@@ -169,6 +171,103 @@ void main() {
       camera.pretendToCapture(Lens.front);
 
       expect(state.transcript.last.content, contains('front'));
+    });
+  });
+}
+
+// ── What this phone tells the runner it can do ───────────────────────────────
+//
+// Capabilities are not tools: the runner never calls them, it reads them to
+// decide how to do its own work. Claiming one this app cannot deliver is worse
+// than claiming nothing, because the runner then stops doing it itself.
+
+/// A client that keeps what it was told, and answers with an agreement.
+class _DeclaringClient extends EmbodimentClient {
+  _DeclaringClient() : super(baseUrl: 'http://test', apiKey: 'k', httpClient: http.Client());
+  Map<String, dynamic>? declared;
+
+  @override
+  Future<List<EmbodiedAgent>> agents() async => [];
+
+  @override
+  Future<Map<String, dynamic>> declareDevice(String deviceId, List<Map<String, dynamic>> tools,
+      {String? label, Map<String, dynamic>? capabilities}) async {
+    declared = capabilities;
+    return const {'faceEmbedding': 'runner'};
+  }
+}
+
+void capabilityDeclaration() {
+  late _DeclaringClient client;
+  late bool granted;
+
+  PoppyState build({bool hasCamera = true}) => PoppyState(
+        pairing: _MemoryPairing(),
+        clientFactory: (_) => client,
+        speakerFactory: (_, __) => const SilentSpeaker(),
+        cameraFactory: (onCapture) => _StubCamera(present: hasCamera, onCapture: onCapture),
+      );
+
+  // Inside the group, not beside it: a setUp registered at file scope runs
+  // for every test in the file, and would overwrite the other group's
+  // permission stubs.
+  group('declaring what this phone can do', () {
+    setUp(() {
+      client = _DeclaringClient();
+      granted = true;
+      cameraPermission = () async => granted;
+      requestCameraPermission = () async => granted;
+    });
+    test('claims the camera when there is one and it may be used', () async {
+      final state = build();
+      await state.completePairing(_paul);
+      await state.deviceTools!.declare();
+
+      expect(client.declared?['camera'], {'lenses': ['back', 'front']});
+    });
+
+    test('does not claim a camera it cannot use', () async {
+      // The runner would otherwise plan around a camera that always fails.
+      granted = false;
+      final state = build();
+      await state.completePairing(_paul);
+      await state.deviceTools!.declare();
+
+      expect(client.declared?.containsKey('camera'), isFalse);
+    });
+
+    test('does not claim a camera on a device without one', () async {
+      final state = build(hasCamera: false);
+      await state.completePairing(_paul);
+      await state.deviceTools!.declare();
+
+      expect(client.declared?.containsKey('camera'), isFalse);
+    });
+
+    test('claims speech, which it really does handle here', () async {
+      final state = build();
+      await state.completePairing(_paul);
+      await state.deviceTools!.declare();
+
+      expect(client.declared?['speech'], {'recognition': true, 'synthesis': true});
+    });
+
+    test('does not claim face embedding, which nothing here can do', () async {
+      // Claiming it would stop the runner sending pictures, and it would then
+      // wait for vectors that never arrive.
+      final state = build();
+      await state.completePairing(_paul);
+      await state.deviceTools!.declare();
+
+      expect(client.declared?.containsKey('faceEmbedding'), isFalse);
+    });
+
+    test('remembers what the runner agreed to', () async {
+      final state = build();
+      await state.completePairing(_paul);
+      await state.deviceTools!.declare();
+
+      expect(state.deviceTools!.agreed['faceEmbedding'], 'runner');
     });
   });
 }

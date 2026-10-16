@@ -153,10 +153,23 @@ class EmbodimentClient {
   ///
   /// Only the device knows what it has and what the user allowed, which is
   /// why the runner cannot work this out for itself.
-  Future<void> declareDevice(String deviceId, List<Map<String, dynamic>> tools,
-      {String? label}) async {
-    await _send('PUT', '/devices/${Uri.encodeComponent(deviceId)}',
-        {'tools': tools, if (label != null) 'label': label});
+  /// Tell the runner what this device offers, and what it can do for itself.
+  ///
+  /// The reply is a negotiation rather than an acknowledgement: it says where
+  /// work will happen, which is how a device learns whether the runner wants
+  /// it to embed faces locally or would rather have the picture.
+  Future<Map<String, dynamic>> declareDevice(
+    String deviceId,
+    List<Map<String, dynamic>> tools, {
+    String? label,
+    Map<String, dynamic>? capabilities,
+  }) async {
+    final body = await _sendForJson('PUT', '/devices/${Uri.encodeComponent(deviceId)}', {
+      'tools': tools,
+      if (label != null) 'label': label,
+      if (capabilities != null) 'capabilities': capabilities,
+    });
+    return (body?['agreed'] as Map?)?.cast<String, dynamic>() ?? const {};
   }
 
   /// Stop offering this device's tools.
@@ -185,7 +198,23 @@ class EmbodimentClient {
     });
   }
 
-  Future<void> _send(String method, String path, [Map<String, dynamic>? body]) async {
+  /// Like [_send], but hands back the decoded reply.
+  ///
+  /// Separate so the common case stays a one-liner: most of these calls are
+  /// told nothing useful in return, and only the ones that negotiate care.
+  Future<Map<String, dynamic>?> _sendForJson(
+      String method, String path, [Map<String, dynamic>? body]) async {
+    final text = await _send(method, path, body);
+    if (text == null || text.isEmpty) return null;
+    try {
+      return (jsonDecode(text) as Map).cast<String, dynamic>();
+    } on Object {
+      // A reply we cannot read is not a failed call — the work was done.
+      return null;
+    }
+  }
+
+  Future<String?> _send(String method, String path, [Map<String, dynamic>? body]) async {
     final request = http.Request(method, _uri(path))
       ..headers.addAll({..._headers, if (body != null) 'Content-Type': 'application/json'});
     if (body != null) request.body = jsonEncode(body);
@@ -199,6 +228,7 @@ class EmbodimentClient {
     if (res.statusCode >= 400) {
       throw EmbodimentException('HTTP ${res.statusCode}', res.statusCode);
     }
+    return res.stream.bytesToString();
   }
 
   /// The live event stream. Speech, state and replies all arrive here.
