@@ -221,16 +221,45 @@ photo, not just a longer one.
 
 **Done when:** "what am I holding?" works. It does.
 
-### 5 — Face recognition and people
-- On-device detect → embed → match, exposed as device tools `identify_person`
-  and `remember_person`.
-- Local person store: name, embedding, consent flag, created date.
-- The enrolment conversation from the requirements: unrecognised face → Poppy
-  asks → name is stored against the embedding.
-- Primary user set during first-run setup and recorded in the agent's template.
+### 5 — Face recognition and people *(server side done; device side not started)*
+
+**Done.** The register, the matching and the tools:
+
+- `server/src/people/` — a per-project register of who the team knows, so
+  learning Paul once is enough for every agent. What each agent *knows* about
+  him stays in its own memory graph; this is only face → name.
+- Four tools: `identify_person`, `remember_person`, `forget_person`,
+  `list_people`. Offered only when a model is configured.
+- Consent is enforced, not recorded. Refusing stores nothing at all, so there
+  is nothing to leak and nothing to forget later. Forgetting really deletes.
+- Four outcomes, not two. `unsure` is distinct from `unknown`: a match needs
+  both enough similarity *and* a margin over the runner-up, because calling
+  Rhoda "Paul" is confidently wrong in front of everybody, where asking is
+  merely awkward.
+- Capability exchange (`server/src/device/capabilities.ts`) settles where
+  embedding happens. Vectors from two models cannot be compared, so the runner
+  names the canonical model and a device may embed only if it runs that exact
+  one.
+
+**Not done.** The part that turns a picture into a vector:
+
+- **On the phone** — ML Kit for detection (not Haar: better on angles and poor
+  light, and its tracking id means recognising once per arrival rather than per
+  frame), plus a MobileFaceNet `.tflite` through `tflite_flutter` to embed.
+  Poppy then declares `faceEmbedding` in its capabilities and sends vectors
+  instead of photographs. This is the path worth building.
+- **On the runner** — the fallback for clients that cannot. The ONNX plumbing
+  is written but `onnxruntime-node` is not a dependency: it unpacks to about
+  300MB for a feature most runs never touch, so it loads dynamically if
+  installed. Image decoding is deliberately left throwing a clear explanation
+  rather than half-written, because the crop, channel order and normalisation
+  must match how the model was trained and guessing produces vectors that look
+  fine and match nobody.
+- Primary user at first-run setup. The store supports one; nothing asks yet.
 
 **Done when:** Poppy greets you by name, asks a stranger for theirs, and
-forgets anyone on request.
+forgets anyone on request. The conversation works end to end against the
+store; what is missing is the eyes.
 
 ### 6 — Expression and animation
 - Convert a starter set of Mixamo FBX clips to `.vrma` as a **development-time**
