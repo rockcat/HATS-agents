@@ -32,9 +32,18 @@ class DeviceToolResult {
   final String? imageBase64;
   final String imageMediaType;
 
+  /// Something the runner asked for that the agent must never read.
+  ///
+  /// A face vector is 192 numbers. Routed through the agent it would cost two
+  /// kilobytes of its context, arrive as prose and be retyped wrong — and it
+  /// is not information a language model can use. The runner reads this
+  /// directly; none of it reaches the conversation.
+  final Object? data;
+
   const DeviceToolResult(this.text, {
     this.imageBase64,
     this.imageMediaType = 'image/jpeg',
+    this.data,
   });
 }
 
@@ -165,7 +174,8 @@ class DeviceToolHost {
           result: produced?.text,
           error: error,
           imageBase64: produced?.imageBase64,
-          imageMediaType: produced?.imageMediaType ?? 'image/jpeg');
+          imageMediaType: produced?.imageMediaType ?? 'image/jpeg',
+          data: produced?.data);
     } on EmbodimentException {
       // The runner will time the request out; nothing better is available.
     }

@@ -31,6 +31,19 @@ dependencies:
   permission_handler: ^11.3.1
   provider: ^6.1.2
 
+  # Knowing who Poppy is talking to, without the face leaving the phone.
+  #
+  # Two models doing different jobs: ML Kit finds *where* a face is, and
+  # MobileFaceNet through LiteRT says *who* it is. LiteRT is what TensorFlow
+  # Lite is called now, and flutter_litert bundles runtimes for Android, iOS,
+  # macOS, Windows, Linux and the web — so the same .tflite file works in
+  # every build of this app.
+  google_mlkit_face_detection: ^0.13.1
+  flutter_litert: ^3.9.4
+  # Decoding the still and cropping it. The crop has to match the browser's
+  # to the pixel or the two write incomparable vectors into one register.
+  image: ^4.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -38,3 +51,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    # The recognition model. Not committed — it decides the embedding space
+    # every stored face lives in, so it is pinned with the build rather than
+    # downloaded at runtime. See docs/face-recognition.md.
+    - assets/models/

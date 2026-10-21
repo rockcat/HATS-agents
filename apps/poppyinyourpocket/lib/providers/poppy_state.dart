@@ -13,6 +13,7 @@ import '../models/embodied_agent.dart';
 import '../models/transcript_message.dart';
 import '../services/camera_tool.dart';
 import '../services/device_tools.dart';
+import '../services/face_tool.dart';
 import '../services/permissions.dart';
 import '../services/embodiment_client.dart';
 import '../services/pairing_service.dart';
@@ -159,6 +160,7 @@ class PoppyState extends ChangeNotifier {
       tools: defaultDeviceTools(),
     );
     await _offerCameraIfUsable();
+    await _offerFaceIfUsable();
     await _declareCapabilities();
   }
 
@@ -167,9 +169,9 @@ class PoppyState extends ChangeNotifier {
   /// Not the same as offering a tool: the runner never calls these, it reads
   /// them to decide how to do its own work. Face embedding is the one that
   /// matters — doing it here means a vector crosses the wire instead of a
-  /// photograph — and it is deliberately not claimed yet, because nothing in
-  /// this app can do it. Claiming it would make the runner stop sending
-  /// pictures and wait for vectors that never come.
+  /// photograph — and it is claimed only when the model actually loaded.
+  /// Claiming it otherwise would have the runner stop sending pictures and
+  /// wait for vectors that never come.
   Future<void> _declareCapabilities() async {
     final host = deviceTools;
     if (host == null) return;
@@ -177,6 +179,7 @@ class PoppyState extends ChangeNotifier {
       if (await _camera.isAvailable() && await cameraPermission())
         'camera': {'lenses': ['back', 'front']},
       'speech': {'recognition': true, 'synthesis': true},
+      if (host.has('embed_face')) ...faceCapability(),
     };
   }
 
@@ -192,6 +195,20 @@ class PoppyState extends ChangeNotifier {
     host.add(takePhotoTool(_camera));
   }
 
+  /// Offer face recognition, if the model is in this build and there is a
+  /// camera to point at somebody.
+  ///
+  /// Silent when it cannot: a build without the recognition model is a normal
+  /// build, and the capability exchange reports the absence honestly.
+  Future<void> _offerFaceIfUsable() async {
+    final host = deviceTools;
+    if (host == null) return;
+    if (!await _camera.isAvailable() || !await cameraPermission()) return;
+
+    final tool = await faceTool(camera: _camera);
+    if (tool != null) host.add(tool);
+  }
+
   /// Ask for the camera, and start offering it if the answer is yes.
   ///
   /// Separate from the check above so the permission prompt appears when
@@ -199,6 +216,9 @@ class PoppyState extends ChangeNotifier {
   Future<bool> requestCamera() async {
     if (!await requestCameraPermission()) return false;
     await _offerCameraIfUsable();
+    // Permission just arrived, so this is the first moment it could work.
+    await _offerFaceIfUsable();
+    await _declareCapabilities();
     await deviceTools?.declare();
     notifyListeners();
     return true;

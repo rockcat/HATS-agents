@@ -188,13 +188,16 @@ class EmbodimentClient {
       String? result,
       String? error,
       String? imageBase64,
-      String imageMediaType = 'image/jpeg'}) async {
+      String imageMediaType = 'image/jpeg',
+      Object? data}) async {
     await _send('POST', '/device-results/${Uri.encodeComponent(requestId)}', {
       'ok': ok,
       if (result != null) 'result': result,
       if (error != null) 'error': error,
       if (imageBase64 != null)
         'image': {'mediaType': imageMediaType, 'base64': imageBase64},
+      // Read by the runner alone — a face vector, never shown to the agent.
+      if (data != null) 'data': data,
     });
   }
 

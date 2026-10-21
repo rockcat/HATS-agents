@@ -36,12 +36,14 @@ class _RecordingClient extends EmbodimentClient {
       String? result,
       String? error,
       String? imageBase64,
-      String imageMediaType = 'image/jpeg'}) async {
+      String imageMediaType = 'image/jpeg',
+      Object? data}) async {
     if (!reachable) throw EmbodimentException('unreachable');
     results.add({
       'id': requestId, 'ok': ok, 'result': result, 'error': error,
       if (imageBase64 != null) 'image': imageBase64,
       if (imageBase64 != null) 'mediaType': imageMediaType,
+      if (data != null) 'data': data,
     });
   }
 }
@@ -194,6 +196,48 @@ void main() {
     test('does not throw when the runner has already gone', () async {
       client.reachable = false;
       await expectLater(hostWith(defaultDeviceTools()).withdraw(), completes);
+    });
+  });
+
+  _dataChannelTests();
+}
+
+// ── The channel the agent never reads ────────────────────────────────────────
+
+void _dataChannelTests() {
+  late _RecordingClient client;
+
+  DeviceToolHost hostWith(List<DeviceTool> tools) =>
+      DeviceToolHost(client: client, deviceId: 'dev-1', label: 'test phone', tools: tools);
+
+  setUp(() => client = _RecordingClient());
+
+  group('data results', () {
+    DeviceTool faceLike(Object? data) => DeviceTool(
+          name: 'embed_face',
+          description: 'x',
+          run: (_) async => DeviceToolResult('Had a look.', data: data),
+        );
+
+    test('passes a vector through untouched', () async {
+      final host = hostWith([faceLike([0.1, 0.2, 0.3])]);
+      await host.handle({'id': 'r1', 'tool': 'embed_face', 'arguments': <String, dynamic>{}});
+      expect(client.results.single['data'], [0.1, 0.2, 0.3]);
+    });
+
+    test('keeps the numbers out of what the agent reads', () async {
+      // 192 floats are no use to a language model and would cost two
+      // kilobytes of its context to say nothing.
+      final host = hostWith([faceLike([0.1, 0.2, 0.3])]);
+      await host.handle({'id': 'r1', 'tool': 'embed_face', 'arguments': <String, dynamic>{}});
+      expect(client.results.single['result'], 'Had a look.');
+      expect(client.results.single['result'], isNot(contains('0.1')));
+    });
+
+    test('sends no data field when a tool produced none', () async {
+      final host = hostWith([faceLike(null)]);
+      await host.handle({'id': 'r1', 'tool': 'embed_face', 'arguments': <String, dynamic>{}});
+      expect(client.results.single.containsKey('data'), isFalse);
     });
   });
 }
