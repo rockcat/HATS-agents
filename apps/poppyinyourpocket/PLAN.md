@@ -274,7 +274,7 @@ store; what is missing is the eyes.
 be worth it.
 
 ### 7 — First run and the agent profile
-- Base profile chosen from the Agent Library on first use; deploy it into a
+- Base profile chosen from the Agent Template Library on first use; deploy it into a
   personal project via the Project Server.
 - VRM chosen from a library, with upload.
 - Trim `email-imap` to the tools Poppy actually needs via `upfrontTools`, rather
